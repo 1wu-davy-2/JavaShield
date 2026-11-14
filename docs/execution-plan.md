@@ -392,10 +392,11 @@ transformer.transform(loader, name, ...)
 - [x] M2 构建器：jar 扫描、ASM stub、加密、回写、清单、secret（含 4 个集成测试）
 - [x] M3 运行时：agent、许可闸门、索引、transformer（JDK 11 实测通过）
 - [x] M4 CLI 与文档：build/issue/verify/inspect/fingerprint/selftest、README、格式规范、运维手册
-- [ ] M5 框架适配：Spring Boot fat jar 真实项目回归、WAR（需 webapp loader 懒初始化）、Maven 插件
+- [x] M5a Spring Boot 3.2.12 fat jar 回归（组件扫描、DI、配置绑定、Actuator；修复 STORED 嵌套 jar 与目录条目）
+- [ ] M5b WAR（需 webapp loader 懒初始化）、Maven 插件、Spring Boot 2.7 / 3.3 回归
 - [ ] M6 商业化：工具授权、试用、GUI、native 密钥模块
 
-### 0.1 实测记录（JDK 11.0.15）
+### 0.1 实测记录（JDK 11 + JDK 17）
 
 | 场景 | 结果 |
 | --- | --- |
@@ -411,4 +412,7 @@ transformer.transform(loader, name, ...)
 | 固定机器绑定 | 非白名单机器被拒 |
 | 绑定记录篡改 | `binding record was modified` |
 | AES-256-GCM / ChaCha20-Poly1305 / 纯 ChaCha20 | 全部端到端通过 |
-| 自动化测试 | 54 个通过（core 48 + cli 6） |
+| 自动化测试 | 56 个通过（core 48 + cli 8） |
+| Spring Boot 3.2.12 fat jar（JDK 17） | 正常启动；bean 扫描 255 个；`/api/hello`、`/actuator/health`、`verify` 全部通过 |
+| Spring Boot 不挂 agent | `LinkageError`，启动失败 |
+| Spring Boot + in-place | Spring ASM 扫描失败（预期，stub 模式强制） |

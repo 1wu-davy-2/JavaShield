@@ -8,10 +8,10 @@
 
 - 版本：`0.1.0-SNAPSHOT`
 - 构建：Maven 3.6+，JDK 11 编译（产物为 Java 8 字节码）
-- 已验证：JDK 11 上普通可执行 jar、三种密码套件、stub / in-place 两种模式
-- 未验证：Spring Boot fat jar（结构已适配，待真实项目回归）、JDK 8/17/21 实机
+- 已验证：JDK 11 上的普通可执行 jar、JDK 17 上的 Spring Boot 3.2.12 fat jar（组件扫描、依赖注入、配置绑定、Actuator）、三种密码套件、stub / in-place 两种模式
+- 未验证：JDK 8/21 实机、Spring Boot 2.7
 - 暂不支持：WAR（0.2 计划，需要 webapp 类加载器懒初始化）
-- 测试：55 个单元与集成测试通过
+- 测试：56 个单元与集成测试通过
 
 ## 快速开始
 
@@ -75,7 +75,7 @@ java -jar javashield.jar inspect --secret dist/myapp.jar.jshield-secret.json
 | 模式 | 参数 | class 条目内容 | 适用 |
 | --- | --- | --- | --- |
 | **stub**（默认） | 无 | 保留字段、方法签名、注解的元数据 stub，方法体是 `throw new LinkageError` | Spring / MyBatis / Swagger 等会扫描类元数据的框架 |
-| **in-place** | `--in-place` | 直接是 `JSX1` 密文 | 普通 jar、非框架应用，体积更小、类结构不外泄 |
+| **in-place** | `--in-place` | 直接是 `JSX1` 密文 | 仅限不扫描类元数据的普通 jar；Spring / MyBatis / Swagger 项目**禁用** |
 
 stub 模式是相对同类工具的关键改进：ClassFinal 通过清空方法体来兼容 Spring，会破坏调试信息和堆栈；JavaShield 把真实字节码放进加密 sidecar，stub 只在 JVM 定义类之前存在，扫描器读到的是完整元数据，运行期执行的是原始字节码（连行号都在）。
 
@@ -104,7 +104,7 @@ stub 模式是相对同类工具的关键改进：ClassFinal 通过清空方法�
 | `--edition <name>` | 版本标识，写进许可证 |
 | `--jvm <range>` | 仅作记录，默认 `8-21` |
 | `--exclude <package>` | 保持明文的包，可重复 |
-| `--in-place` | 使用 in-place 模式 |
+| `--in-place` | 直接加密 class 条目；Spring 等扫描框架不可用 |
 | `--no-embed` | 不把 agent 嵌入 jar，只产出独立 agent |
 | `--agent <path>` | 指定 agent 模板 |
 | `--force` | 覆盖已有输出 |
@@ -182,6 +182,7 @@ samples/hello/       端到端示例
 - [执行计划](docs/execution-plan.md)：竞品取舍、架构、里程碑、风险
 - [格式规范](docs/format.md)：信封、许可证、清单、构建密钥的字节级定义
 - [运维手册](docs/runbook.md)：构建、部署、续期、排障
+- [Spring Boot 3.2 回归报告](docs/spring-boot-regression.md)：真实 fat jar 的验证结果与两个兼容性修复
 
 ## 授权
 

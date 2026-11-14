@@ -131,6 +131,72 @@ class BuildIntegrationTest {
         assertFalse(failures.isEmpty());
     }
 
+    @Test
+    void springBootJarKeepsDirectoriesAndStoredNestedJars() throws Exception {
+        Path input = temp.resolve("boot.jar");
+        Manifest manifest = new Manifest();
+        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        manifest.getMainAttributes().put(Attributes.Name.MAIN_CLASS,
+                "org.springframework.boot.loader.launch.JarLauncher");
+        manifest.getMainAttributes().putValue("Spring-Boot-Classes", "BOOT-INF/classes/");
+        manifest.getMainAttributes().putValue("Spring-Boot-Lib", "BOOT-INF/lib/");
+        byte[] classBytes = readResource("/com/javashield/cli/fixture/Main.class");
+        byte[] nested = "nested-jar-bytes".getBytes("UTF-8");
+        try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(input), manifest)) {
+            for (String directory : new String[]{"BOOT-INF/", "BOOT-INF/classes/",
+                    "BOOT-INF/classes/com/", "BOOT-INF/classes/com/javashield/",
+                    "BOOT-INF/classes/com/javashield/cli/",
+                    "BOOT-INF/classes/com/javashield/cli/fixture/", "BOOT-INF/lib/"}) {
+                out.putNextEntry(new JarEntry(directory));
+                out.closeEntry();
+            }
+            out.putNextEntry(new JarEntry("BOOT-INF/classes/com/javashield/cli/fixture/Main.class"));
+            out.write(classBytes);
+            out.closeEntry();
+            JarEntry lib = new JarEntry("BOOT-INF/lib/demo-lib.jar");
+            lib.setMethod(java.util.zip.ZipEntry.STORED);
+            lib.setSize(nested.length);
+            lib.setCompressedSize(nested.length);
+            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+            crc.update(nested);
+            lib.setCrc(crc.getValue());
+            out.putNextEntry(lib);
+            out.write(nested);
+            out.closeEntry();
+        }
+
+        Path output = temp.resolve("dist-boot/app.jar");
+        BuildOptions options = new BuildOptions();
+        options.input = input;
+        options.output = output;
+        options.agentJar = fakeAgentJar("agent5.jar");
+        options.embedAgent = false;
+        options.force = true;
+        BuildResult result = JarBuilder.build(options);
+        assertEquals(1, result.classes);
+
+        try (JarFile jar = new JarFile(output.toFile())) {
+            assertNotNull(jar.getJarEntry("BOOT-INF/classes/"), "directory entries are required by Boot");
+            assertNotNull(jar.getJarEntry("BOOT-INF/lib/"));
+            assertEquals(java.util.zip.ZipEntry.STORED,
+                    jar.getJarEntry("BOOT-INF/lib/demo-lib.jar").getMethod(),
+                    "nested jars must stay STORED");
+            assertEquals("com/javashield/cli/fixture/Main",
+                    new org.objectweb.asm.ClassReader(readAll(
+                            jar.getInputStream(jar.getJarEntry(
+                                    "BOOT-INF/classes/com/javashield/cli/fixture/Main.class"))))
+                            .getClassName());
+        }
+    }
+
+    private static byte[] readResource(String resource) throws IOException {
+        InputStream in = BuildIntegrationTest.class.getResourceAsStream(resource);
+        if (in == null) {
+            throw new IOException("fixture not found: " + resource);
+        }
+        return readAll(in);
+    }
+
     private Path sampleJar(String name) throws IOException {
         Path jarPath = temp.resolve(name);
         Path fixtureDir = Paths.get("target/test-classes/com/javashield/cli/fixture");

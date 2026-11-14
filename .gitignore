@@ -10,11 +10,5 @@ target/
 .DS_Store
 
 # generated sample output
-samples/**/dist/
-samples/**/dist2/
-samples/**/dist3/
-samples/**/dist4/
-samples/**/dist5/
-samples/**/dist6/
-samples/**/dist7/
+samples/**/dist*/
 samples/**/classes/

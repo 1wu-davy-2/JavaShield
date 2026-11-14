@@ -109,6 +109,9 @@ public final class JarBuilder {
                 written.add("META-INF/MANIFEST.MF");
                 for (JarEntry entry : entries) {
                     if (entry.isDirectory()) {
+                        // Spring Boot 3.2 resolves nested roots (BOOT-INF/classes/) through
+                        // directory entries; dropping them breaks LaunchedClassLoader.
+                        writeDirectory(out, entry.getName(), entry.getTime(), written);
                         continue;
                     }
                     String name = entry.getName();
@@ -297,6 +300,20 @@ public final class JarBuilder {
         return true;
     }
 
+    private static void writeDirectory(JarOutputStream out, String name, long time,
+                                       Set<String> written) throws IOException {
+        String directory = name.endsWith("/") ? name : name + "/";
+        if (!written.add(directory)) {
+            return;
+        }
+        JarEntry entry = new JarEntry(directory);
+        if (time > 0) {
+            entry.setTime(time);
+        }
+        out.putNextEntry(entry);
+        out.closeEntry();
+    }
+
     private static void copy(JarOutputStream out, InputStream in, JarEntry source,
                              Set<String> written, Map<String, Object> manifest, boolean full)
             throws IOException {
@@ -308,33 +325,37 @@ public final class JarBuilder {
         if (source.getTime() > 0) {
             entry.setTime(source.getTime());
         }
-        out.putNextEntry(entry);
-        java.security.MessageDigest digest = null;
-        if (full) {
-            try {
-                digest = java.security.MessageDigest.getInstance("SHA-256");
-            } catch (java.security.NoSuchAlgorithmException exc) {
-                throw new IllegalStateException("SHA-256 is unavailable", exc);
+        // Spring Boot requires nested jars under BOOT-INF/lib to stay STORED.
+        boolean stored = source.getMethod() == java.util.zip.ZipEntry.STORED;
+        if (stored || full) {
+            byte[] data = readAll(in);
+            if (stored) {
+                entry.setMethod(java.util.zip.ZipEntry.STORED);
+                entry.setSize(data.length);
+                entry.setCompressedSize(data.length);
+                java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+                crc.update(data);
+                entry.setCrc(crc.getValue());
             }
+            out.putNextEntry(entry);
+            out.write(data);
+            out.closeEntry();
+            if (full) {
+                com.javashield.core.manifest.Manifest.putFile(
+                        manifest, source.getName(), Hex.encode(Envelope.sha256(data)), data.length);
+            }
+            return;
         }
-        long size = 0;
+        out.putNextEntry(entry);
         try {
             byte[] buffer = new byte[8192];
             int read;
             while ((read = in.read(buffer)) >= 0) {
                 out.write(buffer, 0, read);
-                if (digest != null) {
-                    digest.update(buffer, 0, read);
-                    size += read;
-                }
             }
         } finally {
             in.close();
             out.closeEntry();
-        }
-        if (digest != null) {
-            com.javashield.core.manifest.Manifest.putFile(
-                    manifest, source.getName(), Hex.encode(digest.digest()), size);
         }
     }
 
