@@ -45,7 +45,34 @@ public final class Integrity {
             verifyHash(source, stub, String.valueOf(info.get("stub_sha256")), entry.getKey());
             verifyHash(source, payload, String.valueOf(info.get("payload_sha256")), entry.getKey());
         }
+        if ("full".equalsIgnoreCase(mode)) {
+            verifyDataFiles(source, manifest);
+        }
         return manifest;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void verifyDataFiles(PayloadSource source, Map<String, Object> manifest)
+            throws IOException {
+        Object value = manifest.get("files");
+        if (!(value instanceof Map)) {
+            return;
+        }
+        for (Map.Entry<String, Object> entry : ((Map<String, Object>) value).entrySet()) {
+            if (!(entry.getValue() instanceof Map)) {
+                throw new IllegalStateException("manifest file entry is invalid: " + entry.getKey());
+            }
+            Map<String, Object> info = (Map<String, Object>) entry.getValue();
+            byte[] data = source.read(entry.getKey());
+            long expectedSize = Json.asLong(info.get("size"));
+            if (data.length != expectedSize) {
+                throw new IllegalStateException("file integrity check failed: " + entry.getKey());
+            }
+            String actual = Hex.encode(Envelope.sha256(data));
+            if (!actual.equalsIgnoreCase(String.valueOf(info.get("sha256")))) {
+                throw new IllegalStateException("file integrity check failed: " + entry.getKey());
+            }
+        }
     }
 
     private static void verifyHash(PayloadSource source, String path, String expected, String className)

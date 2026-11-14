@@ -89,6 +89,7 @@ public final class JarBuilder {
             String prefix = detectPrefix(entries, jar.getManifest());
             Manifest targetManifest = jar.getManifest() == null
                     ? new Manifest() : new Manifest(jar.getManifest());
+            boolean fullIntegrity = "full".equalsIgnoreCase(options.integrity);
             boolean embed = options.embedAgent && options.agentJar != null;
             if (embed && input.getFileName().toString().toLowerCase().endsWith(".war")) {
                 warn(warned, "war files cannot embed an agent; start Tomcat with -javaagent");
@@ -122,7 +123,7 @@ public final class JarBuilder {
                         classCount += protectClass(jar, out, entry, name, prefix, buildId, buildKey,
                                 cipher, options, manifest, written);
                     } else {
-                        copy(out, jar.getInputStream(entry), entry, written);
+                        copy(out, jar.getInputStream(entry), entry, written, manifest, fullIntegrity);
                     }
                 }
 
@@ -296,7 +297,8 @@ public final class JarBuilder {
         return true;
     }
 
-    private static void copy(JarOutputStream out, InputStream in, JarEntry source, Set<String> written)
+    private static void copy(JarOutputStream out, InputStream in, JarEntry source,
+                             Set<String> written, Map<String, Object> manifest, boolean full)
             throws IOException {
         if (!written.add(source.getName())) {
             in.close();
@@ -307,15 +309,32 @@ public final class JarBuilder {
             entry.setTime(source.getTime());
         }
         out.putNextEntry(entry);
+        java.security.MessageDigest digest = null;
+        if (full) {
+            try {
+                digest = java.security.MessageDigest.getInstance("SHA-256");
+            } catch (java.security.NoSuchAlgorithmException exc) {
+                throw new IllegalStateException("SHA-256 is unavailable", exc);
+            }
+        }
+        long size = 0;
         try {
             byte[] buffer = new byte[8192];
             int read;
             while ((read = in.read(buffer)) >= 0) {
                 out.write(buffer, 0, read);
+                if (digest != null) {
+                    digest.update(buffer, 0, read);
+                    size += read;
+                }
             }
         } finally {
             in.close();
             out.closeEntry();
+        }
+        if (digest != null) {
+            com.javashield.core.manifest.Manifest.putFile(
+                    manifest, source.getName(), Hex.encode(digest.digest()), size);
         }
     }
 

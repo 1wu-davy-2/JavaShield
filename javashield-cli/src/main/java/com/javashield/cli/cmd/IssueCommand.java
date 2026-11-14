@@ -27,9 +27,13 @@ public final class IssueCommand {
         BuildSecret secret = BuildSecret.load(secretPath);
 
         String out = args.first("out", "license");
-        Path licensePath = out == null ? Paths.get(secret.getLicense()) : Paths.get(out);
-        if (licensePath == null) {
-            throw new IllegalArgumentException("no licence path in the secret; pass --out <path>");
+        Path licensePath;
+        if (out != null) {
+            licensePath = Paths.get(out);
+        } else if (secret.getLicense() != null && !secret.getLicense().trim().isEmpty()) {
+            licensePath = Paths.get(secret.getLicense());
+        } else {
+            throw new IllegalArgumentException("the build secret has no licence path; pass --out <path>");
         }
 
         LicensePayload payload;

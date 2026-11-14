@@ -11,7 +11,7 @@
 - 已验证：JDK 11 上普通可执行 jar、三种密码套件、stub / in-place 两种模式
 - 未验证：Spring Boot fat jar（结构已适配，待真实项目回归）、JDK 8/17/21 实机
 - 暂不支持：WAR（0.2 计划，需要 webapp 类加载器懒初始化）
-- 测试：54 个单元与集成测试通过
+- 测试：55 个单元与集成测试通过
 
 ## 快速开始
 
@@ -95,7 +95,7 @@ stub 模式是相对同类工具的关键改进：ClassFinal 通过清空方法�
 | 选项 | 说明 |
 | --- | --- |
 | `--cipher auto\|aesgcm\|chacha\|chacha-pure` | 密码套件，默认 `auto`（AES-256-GCM） |
-| `--integrity protected\|full\|off` | 清单校验范围，`off` 跳过条目哈希但仍验签 |
+| `--integrity protected\|full\|off` | `protected` 校验类与 payload；`full` 额外校验数据文件；`off` 跳过哈希但仍验签 |
 | `-e, --expire <yyyy-MM-dd>` | 到期日，省略为永久 |
 | `--grace-days <n>` | 到期后的宽限天数，最大 3650 |
 | `--bind <machine-id>` | 允许的机器，可重复 |

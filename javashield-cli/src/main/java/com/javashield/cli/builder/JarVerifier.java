@@ -60,8 +60,40 @@ public final class JarVerifier {
                 check(jar, failures, entry.getKey(), String.valueOf(info.get("payload")),
                         String.valueOf(info.get("payload_sha256")));
             }
+            if ("full".equalsIgnoreCase(String.valueOf(manifest.get("integrity")))) {
+                verifyDataFiles(jar, manifest, failures);
+            }
         }
         return failures;
+    }
+
+    private static void verifyDataFiles(JarFile jar, Map<String, Object> manifest,
+                                        List<String> failures) throws IOException {
+        Object value = manifest.get("files");
+        if (!(value instanceof Map)) {
+            return;
+        }
+        for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+            String path = String.valueOf(entry.getKey());
+            if (!(entry.getValue() instanceof Map)) {
+                failures.add("invalid file entry: " + path);
+                continue;
+            }
+            Map<?, ?> info = (Map<?, ?>) entry.getValue();
+            JarEntry jarEntry = jar.getJarEntry(path);
+            if (jarEntry == null) {
+                failures.add("missing data file: " + path);
+                continue;
+            }
+            byte[] data = readAll(jar.getInputStream(jarEntry));
+            if (data.length != Json.asLong(info.get("size"))) {
+                failures.add("size mismatch on " + path);
+                continue;
+            }
+            if (!Hex.encode(Envelope.sha256(data)).equalsIgnoreCase(String.valueOf(info.get("sha256")))) {
+                failures.add("hash mismatch on " + path);
+            }
+        }
     }
 
     private static void check(JarFile jar, List<String> failures, String className,

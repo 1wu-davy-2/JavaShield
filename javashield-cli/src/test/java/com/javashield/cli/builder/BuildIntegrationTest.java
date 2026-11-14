@@ -91,6 +91,28 @@ class BuildIntegrationTest {
     }
 
     @Test
+    void fullIntegrityCoversDataFiles() throws Exception {
+        Path input = sampleJar("full.jar");
+        Path output = temp.resolve("dist-full/app.jar");
+        BuildOptions options = new BuildOptions();
+        options.input = input;
+        options.output = output;
+        options.agentJar = fakeAgentJar("agent4.jar");
+        options.embedAgent = false;
+        options.integrity = "full";
+        options.force = true;
+        BuildResult result = JarBuilder.build(options);
+        BuildSecret secret = BuildSecret.load(result.secret);
+        assertTrue(JarVerifier.verify(output, secret).isEmpty());
+
+        rewriteEntry(output, "data.txt", "changed".getBytes("UTF-8"));
+        List<String> failures = JarVerifier.verify(output, secret);
+        assertFalse(failures.isEmpty());
+        assertTrue(failures.get(0).contains("data.txt") || failures.get(0).contains("size"),
+                "unexpected failure: " + failures);
+    }
+
+    @Test
     void tamperingBreaksVerification() throws Exception {
         Path input = sampleJar("tamper.jar");
         Path output = temp.resolve("dist-tamper/app.jar");
@@ -127,6 +149,9 @@ class BuildIntegrationTest {
                     throw new IllegalStateException(exc);
                 }
             });
+            out.putNextEntry(new JarEntry("data.txt"));
+            out.write("original-data".getBytes("UTF-8"));
+            out.closeEntry();
         }
         return jarPath;
     }

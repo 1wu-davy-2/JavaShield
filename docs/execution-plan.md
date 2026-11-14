@@ -389,7 +389,7 @@ transformer.transform(loader, name, ...)
 
 - [x] M0 骨架与执行计划
 - [x] M1 密码与许可：信封、HKDF、ChaCha20、Ed25519、JSON、许可证、清单、指纹（48 个 core 测试）
-- [x] M2 构建器：jar 扫描、ASM stub、加密、回写、清单、secret（含 3 个集成测试）
+- [x] M2 构建器：jar 扫描、ASM stub、加密、回写、清单、secret（含 4 个集成测试）
 - [x] M3 运行时：agent、许可闸门、索引、transformer（JDK 11 实测通过）
 - [x] M4 CLI 与文档：build/issue/verify/inspect/fingerprint/selftest、README、格式规范、运维手册
 - [ ] M5 框架适配：Spring Boot fat jar 真实项目回归、WAR（需 webapp loader 懒初始化）、Maven 插件
