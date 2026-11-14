@@ -34,6 +34,7 @@ mvn -q clean install
             </execution>
           </executions>
           <configuration>
+            <!-- customer 等选项需要 Pro / Enterprise 工具授权；试用时请移除 -->
             <customer>ACME</customer>
             <expire>2027-12-31</expire>
           </configuration>
@@ -63,6 +64,42 @@ java -jar target/app.jar
 
 如果顺序反了，产物会是「先保护、再被 repackage 覆盖」的明文包。构建日志里出现 `javashield:...:protect` 之后仍然能用 `unzip -l` 看到明文 class，就是顺序问题。
 
+### 工具授权与试用
+
+插件在 `protect` 执行前检查构建器许可证的 `maven` 功能。没有安装许可证时进入 14 天 / 3 次构建的本地试用：
+
+- 试用允许 stub 模式、全部密码套件、`embedAgent`、`excludes`、产品 `expire` / `edition`；
+- 试用**不允许** `customer`、`inPlace`、`integrity=full`、`bind` / `bindFirstRun`，否则构建在开始前失败，不消耗额度；
+- 输入 jar 已受保护时插件直接跳过，也不会消耗额度；
+- 许可证、激活与撤销的完整说明见 [工具授权](tool-license.md)。
+
+安装许可证的两种方式：
+
+```bash
+# 方式一：装到用户状态目录，CLI 与插件共用
+javashield license install --license pro.json
+
+# 方式二：CI 中显式指定文件
+mvn -Pjavashield package -Djavashield.toolLicense=/secure/pro.json
+```
+
+CI 还需要让插件信任签发根公钥：
+
+```bash
+export JAVASHIELD_TOOL_PUBLIC_KEY="$(cat root.pub)"
+# 或者把 root.pub 嵌入发布版工具
+```
+
+失败时日志会带稳定错误码，例如：
+
+```
+JavaShield tool licence: trial builds do not allow customer watermark [trial_limit]
+JavaShield tool licence: monthly build quota exhausted (100/100) [quota_exhausted]
+JavaShield tool licence: tool licence does not include the 'maven' feature [feature_missing]
+```
+
+源码开发可设置 `JAVASHIELD_DEV=1` 跳过工具授权；发布版嵌入公钥后该变量失效。
+
 ## 3. 参数
 
 | 参数 | 属性 | 默认 | 说明 |
@@ -83,6 +120,7 @@ java -jar target/app.jar
 | `inPlace` | `javashield.inPlace` | `false` | Spring 项目禁用 |
 | `embedAgent` | `javashield.embedAgent` | `true` | 内嵌 agent + `Launcher-Agent-Class` |
 | `secretDirectory` | `javashield.secretDirectory` | `${basedir}/.javashield` | 构建密钥归档目录 |
+| `toolLicense` | `javashield.toolLicense` | 用户状态目录 | 显式指定工具许可证文件（CI 常用） |
 | `skip` | `javashield.skip` | `false` | 跳过保护 |
 
 配置示例：
@@ -111,7 +149,8 @@ mvn -Pjavashield package -Djavashield.skip=true
 
 - 该文件是续期与复核的唯一凭据，泄漏等同于该构建的最高权限；
 - 不要提交到版本库（`.javashield/` 已在 `.gitignore`）；
-- CI 上应把它收集为构建产物并转存到密钥管理服务。
+- CI 上应把它收集为构建产物并转存到密钥管理服务；
+- 通过工具授权构建时，密钥里还会多一个 `tool_license` 对象，记录工具许可证编号、客户、机器与本次构建后的配额计数；公开清单只含编号、版本与 `trial` 标记。
 
 许可证 `jshield.lic` 写在 jar 同级（默认 `target/`），因为它必须随包部署。
 

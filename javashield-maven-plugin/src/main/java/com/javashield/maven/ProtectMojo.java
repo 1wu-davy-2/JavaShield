@@ -14,6 +14,12 @@ import com.javashield.builder.AgentLocator;
 import com.javashield.builder.BuildOptions;
 import com.javashield.builder.BuildResult;
 import com.javashield.builder.JarBuilder;
+import com.javashield.tool.ToolCodes;
+import com.javashield.tool.ToolFeatures;
+import com.javashield.tool.ToolLicenseChecker;
+import com.javashield.tool.ToolLicenseException;
+import com.javashield.tool.ToolLicenseStatus;
+import com.javashield.tool.ToolTrialPolicy;
 
 /**
  * Protects the packaged application jar in place.
@@ -81,6 +87,13 @@ public class ProtectMojo extends AbstractMojo {
             defaultValue = "${project.basedir}/.javashield")
     private File secretDirectory;
 
+    /**
+     * Optional explicit tool licence file. When omitted the plugin uses the
+     * user-level state directory (or the local trial).
+     */
+    @Parameter(property = "javashield.toolLicense")
+    private File toolLicense;
+
     @Override
     public void execute() throws MojoExecutionException {
         if (skip) {
@@ -140,8 +153,41 @@ public class ProtectMojo extends AbstractMojo {
         }
 
         try {
+            ToolLicenseChecker checker = ToolLicenseChecker.createDefault(
+                    toolLicense == null ? null : toolLicense.toPath());
+            ToolLicenseStatus status = checker.require(ToolFeatures.MAVEN);
+
+            ToolTrialPolicy.BuildProfile profile = new ToolTrialPolicy.BuildProfile();
+            profile.cipher = options.cipher;
+            profile.integrity = options.integrity;
+            profile.inPlace = options.inPlace;
+            profile.customerWatermark = options.customer != null
+                    && !options.customer.trim().isEmpty();
+            profile.explicitBinding = !options.fingerprints.isEmpty();
+            profile.bindFirstRun = options.bindFirstRun;
+            profile.embeddedAgent = options.embedAgent;
+            List<String> problems = ToolTrialPolicy.problems(status, profile);
+            if (!problems.isEmpty()) {
+                throw new ToolLicenseException(ToolCodes.TRIAL_LIMIT,
+                        "trial builds do not allow " + ToolTrialPolicy.describe(problems));
+            }
+
+            JarBuilder.validate(options);
+            status = checker.recordBuild(status);
+            options.toolWatermark = status.secretWatermark();
+            if (status.isTrial()) {
+                getLog().warn("JavaShield trial build " + status.getTrialBuildsUsed()
+                        + "/" + status.getTrialMaxBuilds() + ": " + status.getMessage());
+            } else if (status.isLicensed()) {
+                getLog().info("tool licence " + status.getLicenseId()
+                        + " (" + status.getEdition() + ")");
+            }
+
             BuildResult result = JarBuilder.build(options);
             getLog().info("protected " + result.classes + " classes, build " + result.buildId);
+        } catch (ToolLicenseException exc) {
+            throw new MojoExecutionException("JavaShield tool licence: " + exc.getMessage()
+                    + " [" + exc.getCode() + "]", exc);
         } catch (Exception exc) {
             throw new MojoExecutionException("JavaShield failed: " + exc.getMessage(), exc);
         }

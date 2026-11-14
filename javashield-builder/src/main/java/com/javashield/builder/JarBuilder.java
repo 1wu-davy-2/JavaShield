@@ -11,6 +11,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -82,6 +83,10 @@ public final class JarBuilder {
         Path jarOut = work.resolve(output.getFileName().toString());
         Map<String, Object> manifest = com.javashield.core.manifest.Manifest.create(
                 buildId, cipher, options.integrity);
+        Map<String, Object> watermark = publicWatermark(options.toolWatermark);
+        if (!watermark.isEmpty()) {
+            manifest.put("tool_license", watermark);
+        }
         Set<String> written = new LinkedHashSet<String>();
         Set<String> warned = new HashSet<String>();
         int classCount = 0;
@@ -183,6 +188,7 @@ public final class JarBuilder {
         secret.setBuildKey(buildKey);
         secret.setSigningKey(signingSeed);
         secret.setPublicKey(publicKey);
+        secret.setToolLicense(options.toolWatermark);
         secret.save(secretPath);
 
         if (options.agentJar != null) {
@@ -232,7 +238,8 @@ public final class JarBuilder {
         return 1;
     }
 
-    private static void validate(BuildOptions options) {
+    /** Validates build options without writing or consuming a licence quota. */
+    public static void validate(BuildOptions options) {
         if (options.input == null || options.output == null) {
             throw new IllegalArgumentException("input and output are required");
         }
@@ -259,6 +266,32 @@ public final class JarBuilder {
         }
         if (options.expire != null) {
             Dates.parseDate(options.expire);
+        }
+    }
+
+    /**
+     * The signed manifest is shipped to customers, so only non-sensitive fields
+     * of the tool watermark are copied into it. The customer name, machine id
+     * and quota counters stay in the build secret.
+     */
+    private static Map<String, Object> publicWatermark(Map<String, Object> watermark) {
+        Map<String, Object> result = new LinkedHashMap<String, Object>();
+        if (watermark == null) {
+            return result;
+        }
+        copyWatermarkField(watermark, result, "tool");
+        copyWatermarkField(watermark, result, "tool_version");
+        copyWatermarkField(watermark, result, "license_id");
+        copyWatermarkField(watermark, result, "edition");
+        copyWatermarkField(watermark, result, "trial");
+        return result;
+    }
+
+    private static void copyWatermarkField(Map<String, Object> source,
+                                           Map<String, Object> target, String key) {
+        Object value = source.get(key);
+        if (value != null) {
+            target.put(key, value);
         }
     }
 

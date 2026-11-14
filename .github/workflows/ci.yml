@@ -122,6 +122,25 @@ jobs:
       - name: Install the tool and the Maven plugin
         run: mvn -B -ntp -DskipTests install
 
+      - name: Create and install a CI tool licence
+        run: |
+          set -euo pipefail
+          mkdir -p target/ci-root target/ci-home
+          java -jar javashield-cli/target/javashield.jar license-admin init-root \
+            --out target/ci-root
+          java -jar javashield-cli/target/javashield.jar license-admin issue \
+            --key target/ci-root/root.key \
+            --out target/ci-license.json \
+            --customer CI \
+            --edition pro \
+            --max-builds 10
+          echo "JAVASHIELD_HOME=$PWD/target/ci-home" >> "$GITHUB_ENV"
+          echo "JAVASHIELD_TOOL_PUBLIC_KEY=$(cat target/ci-root/root.pub)" >> "$GITHUB_ENV"
+          JAVASHIELD_HOME="$PWD/target/ci-home" \
+            JAVASHIELD_TOOL_PUBLIC_KEY="$(cat target/ci-root/root.pub)" \
+            java -jar javashield-cli/target/javashield.jar license install \
+              --license target/ci-license.json
+
       - name: Build a protected Spring Boot application
         run: |
           set -euo pipefail

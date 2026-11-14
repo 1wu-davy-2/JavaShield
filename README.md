@@ -13,8 +13,9 @@
 - 已验证：JDK 11 上的普通可执行 jar、JDK 17 上的 Spring Boot 3.2.12 fat jar（组件扫描、依赖注入、配置绑定、Actuator）、三种密码套件、stub / in-place 两种模式
 - 未验证：JDK 8/21 实机、Spring Boot 2.7
 - 接入方式：CLI 与 Maven 插件（`package` 阶段自动保护，客户项目零改造）
+- 构建器授权：本地试用（14 天 / 3 次构建）与离线工具许可证已接入 CLI 和 Maven 插件
 - 暂不支持：WAR（0.2 计划，需要 webapp 类加载器懒初始化）
-- 测试：56 个单元与集成测试通过
+- 测试：91 个单元与集成测试通过
 
 ## 快速开始
 
@@ -37,9 +38,10 @@ mvn -q -DskipTests package
 java -jar javashield.jar build \
   -i myapp.jar \
   -o dist/myapp.jar \
-  --customer "ACME" \
   -e 2027-12-31
 ```
+
+> 首次使用默认进入试用模式（14 天 / 3 次构建），所以示例没有使用客户水印、`--in-place`、`--integrity full` 和机器绑定。安装 Pro / Enterprise 工具授权后这些选项才可用，见[工具授权](#工具授权构建器自身)。
 
 输出：
 
@@ -96,7 +98,49 @@ java -jar javashield.jar inspect --secret dist/myapp.jar.jshield-secret.json
 mvn -Pjavashield clean package
 ```
 
+> 上面的 `<customer>` 需要 Pro / Enterprise 工具授权；试用模式请先移除该参数。完整授权流程见下一节。
+
 插件必须声明在 `spring-boot-maven-plugin` 之后，输入才是 fat jar。构建密钥归档到 `${basedir}/.javashield/`，不会因 `mvn clean` 丢失。详见 [Maven 插件文档](docs/maven-plugin.md)。
+
+## 工具授权（构建器自身）
+
+JavaShield 有两层许可证，不要混淆：
+
+| | 工具许可证 | 产品许可证 |
+| --- | --- | --- |
+| 文件 | `tool-license.json`（本机状态目录） | `jshield.lic`（随产物部署） |
+| 管什么 | **谁能使用构建器**、能用哪些功能、每月几次构建 | **受保护应用在哪台机器、什么时间**可以运行 |
+| 谁签 | 你的 Ed25519 根密钥 | 每次构建生成的签名密钥 |
+
+不安装工具许可证时进入本地试用：14 天、3 次构建，支持 stub 模式与全部密码套件，但不允许 `--in-place`、`--integrity full`、`--customer` 和机器绑定。状态目录默认是 `%APPDATA%\JavaShield`（Windows）或 `~/.javashield`，可用 `JAVASHIELD_HOME` 覆盖。
+
+签发并安装一枚 Pro 工具许可证：
+
+```bash
+# 1. 生成根密钥。root.key 必须离线保管，绝不提交或随工具发布。
+java -jar javashield.jar license-admin init-root --out root-keys
+
+# 2. 签发工具许可证（features 默认按 edition 展开）
+java -jar javashield.jar license-admin issue \
+  --key root-keys/root.key \
+  --out pro.json \
+  --customer "Your Company" \
+  --edition pro \
+  --max-builds 100 \
+  --expires 2027-12-31
+
+# 3. 让源码构建信任 root.pub，然后安装
+export JAVASHIELD_TOOL_PUBLIC_KEY="$(cat root-keys/root.pub)"
+java -jar javashield.jar license install --license pro.json
+java -jar javashield.jar license status
+```
+
+- **正式发布**必须把 `root.pub` 嵌入工具，否则任何人都能替换信任根：
+  把 `root.pub` 放到仓库根目录的 `root-keys/`，执行 `mvn -Pembedded-tool-key package`。
+  嵌入后环境变量不能再覆盖公钥，`JAVASHIELD_DEV=1` 也会失效。
+- 源码开发可显式设置 `JAVASHIELD_DEV=1` 跳过工具授权（仅在没有嵌入公钥的构建中生效）。
+- 续期工具许可证就是重新 `issue` + `license install`，不需要重装工具。
+- 详细格式、状态码、配额与撤销列表见 [工具授权文档](docs/tool-license.md)。
 
 ## 两种加密模式
 
@@ -115,6 +159,8 @@ stub 模式是相对同类工具的关键改进：ClassFinal 通过清空方法�
 | `issue --secret <json>` | 重新签发 / 续期许可证 |
 | `verify --jar <jar> --secret <json>` | 校验清单签名与每个受保护条目的哈希 |
 | `inspect --jar <jar>` / `--secret <json>` | 查看构建与许可信息 |
+| `license status\|install\|deactivate\|revocations` | 查看 / 安装 / 移除构建器授权与撤销列表 |
+| `license-admin init-root\|issue\|show\|revoke` | 离线根密钥与工具许可证签发 |
 | `fingerprint` | 打印本机机器码 |
 | `selftest` | 跑密码、签名、JSON、许可证自检 |
 
@@ -199,6 +245,7 @@ public_key（agent 内置）─────验签──> 拒绝伪造
 
 ```
 javashield-core/          信封、HKDF、ChaCha20、Ed25519、JSON、许可证、清单、指纹
+javashield-tool/          构建器授权：工具许可证、试用/配额、状态存储、水印
 javashield-builder/       ASM stub、jar 重写、加密与清单（CLI 与 Maven 插件共用）
 javashield-agent/         premain/agentmain、许可闸门、完整性校验、transformer
 javashield-cli/           CLI：build / issue / verify / inspect / fingerprint / selftest
@@ -212,6 +259,7 @@ samples/spring-boot-demo/ Spring Boot 3.2 回归工程
 
 - [执行计划](docs/execution-plan.md)：竞品取舍、架构、里程碑、风险
 - [格式规范](docs/format.md)：信封、许可证、清单、构建密钥的字节级定义
+- [工具授权](docs/tool-license.md)：试用、许可证签发、配额、状态码与信任根
 - [运维手册](docs/runbook.md)：构建、部署、续期、排障
 - [Spring Boot 3.2 回归报告](docs/spring-boot-regression.md)：真实 fat jar 的验证结果与两个兼容性修复
 - [Maven 插件](docs/maven-plugin.md)：零改造接入、参数、幂等构建与排障

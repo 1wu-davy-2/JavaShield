@@ -15,3 +15,6 @@ samples/**/classes/
 
 # build secrets archived by the maven plugin
 .javashield/
+
+# tool licensing private keys (never commit)
+root-keys/

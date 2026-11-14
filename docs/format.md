@@ -144,6 +144,13 @@ canonical JSON 规则：对象键按 `String.compareTo` 升序；无空格换行
     }
   },
   "files": {},
+  "tool_license": {
+    "tool": "javashield 0.1.0",
+    "tool_version": "0.1.0",
+    "license_id": "JS-UA5Y-G4HZ-Y2FW",
+    "edition": "pro",
+    "trial": false
+  },
   "signature": "<Base64 64B>"
 }
 ```
@@ -151,6 +158,7 @@ canonical JSON 规则：对象键按 `String.compareTo` 升序；无空格换行
 - `stub` / `payload` 是 jar 条目路径；in-place 模式下两者相同。
 - `plain_sha256` 是原始 class 的哈希，用于审计，不参与启动校验。
 - `files` 预留给 `--integrity full` 的数据文件校验。
+- `tool_license` 可选，由构建器授权写入；只含公开字段，客户名、机器码与配额计数留在构建密钥。
 - 签名前缀为 `jshield-manifest-v1:`。
 
 ---
@@ -172,11 +180,25 @@ canonical JSON 规则：对象键按 `String.compareTo` 升序；无空格换行
   "master_key": "<Base64 32B>",
   "build_key": "<Base64 32B>",
   "signing_key": "<Base64 32B seed>",
-  "public_key": "<Base64 32B>"
+  "public_key": "<Base64 32B>",
+  "tool_license": {
+    "tool": "javashield 0.1.0",
+    "tool_version": "0.1.0",
+    "license_id": "JS-UA5Y-G4HZ-Y2FW",
+    "edition": "pro",
+    "trial": false,
+    "customer": "ACME",
+    "machine": "b4272c2f3e023fb9f9bd5046268a43ef",
+    "builds_used": 1,
+    "quota_limit": 100,
+    "expires": "2027-11-14"
+  }
 }
 ```
 
 `signing_key` 是 Ed25519 的 32 字节 seed，`issue` 与 `verify` 都依赖它。泄漏等同于泄漏该构建的最高权限，必须离线保存，并设置文件权限为 600（POSIX 下程序会自动设置）。
+
+`tool_license` 可选，是构建器授权的完整水印；老版本构建密钥没有该字段，解析时视为不存在。
 
 ---
 
@@ -258,3 +280,101 @@ machine_id = hex(SHA256(raw))[0:32]
 | 兜底 | `os.name|os.arch|hostname|第一个非回环 MAC` |
 
 该算法与 PyShield 完全一致，同一台机器在两个产品中的机器码相同，可共用一个签发后台。可用 `-Djshield.machine.id=<id>` 覆盖（便于 CI 与锁定环境）。
+
+---
+
+## 9. 工具许可证与本地状态
+
+### 9.1 工具许可证 `tool-license.json`
+
+```json
+{
+  "format": "jshield-tool-license/1",
+  "payload": {
+    "product": "javashield",
+    "license_id": "JS-UA5Y-G4HZ-Y2FW",
+    "customer": "ACME",
+    "edition": "pro",
+    "features": ["cli", "license-issuance", "maven"],
+    "seats": 1,
+    "max_activations": 0,
+    "max_builds_per_month": 100,
+    "bind_mode": "any",
+    "fingerprints": [],
+    "activation_required": false,
+    "issued": "2026-11-14T09:00:00Z",
+    "not_before": "2026-11-14",
+    "expires": "2027-11-14",
+    "grace_days": 0,
+    "revocation_epoch": 0,
+    "notes": null
+  },
+  "signature": "<Base64 64B>"
+}
+```
+
+签名：
+
+```
+message = "jshield-tool-license-v1:" || canonical_json(payload)
+```
+
+字段语义、edition 与功能矩阵见 [工具授权](tool-license.md)。
+
+### 9.2 根密钥
+
+```json
+{
+  "format": "jshield-root-key/1",
+  "seed": "<Base64 32B>",
+  "public_key": "<Base64 32B>",
+  "created": "2026-11-14T09:00:00Z"
+}
+```
+
+`root.key` 只应离线保存；发布物只嵌入 `root.pub`（32 字节 Base64 或 hex），路径为
+`com/javashield/tool/root.pub`。
+
+### 9.3 本地状态
+
+`trial.json`、`quota.json`、`install.json` 使用统一的封装：
+
+```json
+{
+  "format": "jshield-state/1",
+  "purpose": "quota",
+  "payload": {
+    "format": "jshield-quota/1",
+    "license_id": "JS-UA5Y-G4HZ-Y2FW",
+    "month": "2026-11",
+    "used": 1,
+    "machine": "b4272c2f3e023fb9f9bd5046268a43ef",
+    "updated": "2026-11-14T09:10:00Z"
+  },
+  "signature": "<Hex HMAC-SHA256>"
+}
+```
+
+```
+state_key = SHA256("jshield-state-key-v1|" + purpose + "|" + machine_id)
+message   = "jshield-state-v1:" + purpose + "|" + canonical_json(payload)
+signature = HMAC-SHA256(state_key, message)
+```
+
+`purpose` 为 `trial`、`quota` 或 `install`。HMAC 只提供篡改证据与跨机器复制限制；删除文件仍可重置本地试用。
+
+### 9.4 撤销列表 `revocations.json`
+
+```json
+{
+  "format": "jshield-revocations/1",
+  "payload": {
+    "revoked": ["JS-UA5Y-G4HZ-Y2FW"],
+    "epoch": 1,
+    "updated": "2026-11-14T09:20:00Z"
+  },
+  "signature": "<Base64 64B>"
+}
+```
+
+签名前缀为 `jshield-revocations-v1:`。验签失败的列表会被忽略，避免用坏文件制造拒绝服务。

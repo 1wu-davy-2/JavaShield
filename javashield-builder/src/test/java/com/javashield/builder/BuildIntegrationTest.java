@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.jar.Attributes;
@@ -129,6 +130,45 @@ class BuildIntegrationTest {
         rewriteEntry(output, "com/javashield/builder/fixture/Target.class", new byte[]{1, 2, 3});
         List<String> failures = JarVerifier.verify(output, secret);
         assertFalse(failures.isEmpty());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void toolWatermarkIsSignedAndPrivateFieldsStayInTheSecret() throws Exception {
+        Path input = sampleJar("watermark.jar");
+        Path output = temp.resolve("dist-watermark/app.jar");
+        BuildOptions options = new BuildOptions();
+        options.input = input;
+        options.output = output;
+        options.agentJar = fakeAgentJar("agent-watermark.jar");
+        options.embedAgent = false;
+        options.force = true;
+        Map<String, Object> watermark = new LinkedHashMap<String, Object>();
+        watermark.put("tool", "javashield 0.1.0");
+        watermark.put("tool_version", "0.1.0");
+        watermark.put("license_id", "JS-TEST-0001");
+        watermark.put("edition", "pro");
+        watermark.put("trial", Boolean.FALSE);
+        watermark.put("customer", "Acme");
+        watermark.put("machine", "machine-a");
+        watermark.put("builds_used", Long.valueOf(3));
+        options.toolWatermark = watermark;
+
+        BuildResult result = JarBuilder.build(options);
+        BuildSecret secret = BuildSecret.load(result.secret);
+        assertEquals("Acme", secret.getToolLicense().get("customer"));
+        assertEquals(3L, ((Number) secret.getToolLicense().get("builds_used")).longValue());
+
+        Map<String, Object> manifest = JarVerifier.readManifest(output);
+        Map<String, Object> published =
+                (Map<String, Object>) manifest.get("tool_license");
+        assertNotNull(published);
+        assertEquals("JS-TEST-0001", published.get("license_id"));
+        assertEquals(Boolean.FALSE, published.get("trial"));
+        assertFalse(published.containsKey("customer"));
+        assertFalse(published.containsKey("machine"));
+        assertFalse(published.containsKey("builds_used"));
+        assertTrue(JarVerifier.verify(output, secret).isEmpty());
     }
 
     @Test

@@ -152,6 +152,25 @@ java -cp jshield-agent.jar com.javashield.core.Fingerprint
 | `manifest signature is invalid` | 清单被替换 | 重新构建 |
 | `cannot locate the agent jar` | 发布目录缺少 agent | `--agent <path>` 或把 `jshield-agent.jar` 放到 CLI 同级 |
 | `reg.exe` 被安全软件拦截 | 机器码首次探测失败 | 会回退到卷序列号/主机名+MAC；也可 `-Djshield.machine.id=<id>` 显式指定 |
+| `trial period has expired` / `trial build quota is exhausted` | 试用天数或次数用尽 | 安装 Pro/Enterprise 工具许可证；源码构建可 `JAVASHIELD_DEV=1` |
+| `trial builds do not allow ... [trial_limit]` | 试用使用了付费构建选项 | 去掉 `--in-place` / `--integrity full` / `--customer` / 绑定，或安装付费许可证 |
+| `tool licence does not include the 'x' feature [feature_missing]` | 许可证功能列表不含当前入口 | 重新签发并加入对应 `--feature` / 提高 edition |
+| `monthly build quota exhausted [quota_exhausted]` | 当月构建额度用尽 | 等下一个自然月，或签发更高 `--max-builds` 的许可证 |
+| `tool licence is bound to another machine [machine_mismatch]` | 工具许可证绑定了别的机器 | 用 `javashield fingerprint` 取本机码后重新签发 |
+| `tool state signature is invalid [state_invalid]` | 试用/配额/激活状态被修改或损坏 | 删除状态目录下对应的 `trial.json` / `quota.json` / `install.json` 后重试（会重置本地计数） |
+| `tool licence is invalid [license_invalid]` | 文件损坏、格式不对或签名不匹配 | 确认 `JAVASHIELD_TOOL_PUBLIC_KEY` / 嵌入的 `root.pub` 与签发根一致 |
+| `no tool public key is configured` | 源码构建没有信任根 | 设置 `JAVASHIELD_TOOL_PUBLIC_KEY`，或正式发布时嵌入 `root.pub` |
+
+### 工具授权排障
+
+```bash
+javashield license status                 # 不可用时退出码为 1
+javashield license status --license /path/to/license.json
+javashield license install --license /path/to/license.json
+javashield license deactivate
+```
+
+状态目录优先级：`-Djavashield.home` → `JAVASHIELD_HOME` → `%APPDATA%\JavaShield` / `~/.javashield`。CI 中建议显式设置 `JAVASHIELD_HOME` 与 `JAVASHIELD_TOOL_PUBLIC_KEY`，避免依赖用户目录。完整状态码见 [工具授权](tool-license.md)。
 
 ### 调试受保护程序
 
@@ -174,6 +193,9 @@ transformer 失败会抛 `IllegalStateException: javashield: cannot decrypt prot
 | 文件 | 敏感度 | 保存要求 |
 | --- | --- | --- |
 | `*.jshield-secret.json` | 最高 | 离线/加密存储，按构建归档，绝不进版本库 |
+| `root.key`（工具授权根私钥） | 最高 | 离线介质 / HSM 保管，绝不进构建机、仓库或发布包 |
+| `root.pub` | 公开 | 嵌入发布版工具；可进仓库或随许可证签发流程分发 |
+| `tool-license.json` | 中 | 本机构建器授权，按机器安装，不随产品交付 |
 | `jshield.lic` | 中 | 可随包交付，可被客户读取（内容加密） |
 | `jshield-agent.jar` | 低 | 每次构建重新生成，内含混淆的 master key |
 | 原始 jar | 中 | 保留，用于重新构建与回归 |
@@ -195,6 +217,9 @@ transformer 失败会抛 `IllegalStateException: javashield: cannot decrypt prot
 - [ ] `*.jshield-secret.json` 已归档到安全位置，未进入交付包
 - [ ] 交付包里没有原始 class（`unzip -l` 抽查）
 - [ ] 记录 build_id 与对应的客户
+- [ ] 发布版工具已嵌入 `com/javashield/tool/root.pub`（`-Pembedded-tool-key`）
+- [ ] 发布版上 `JAVASHIELD_DEV=1` 无法跳过工具授权
+- [ ] `javashield license status` 在发布机与 CI 上返回预期状态
 
 ---
 
@@ -205,4 +230,7 @@ transformer 失败会抛 `IllegalStateException: javashield: cannot decrypt prot
 - `module-info.class` 保持明文，模块化 jar 未回归；
 - 加密后不能用 `jarsigner` 签名（会与条目哈希冲突）；
 - agent 只能启动期加载，不支持运行期 attach（顺应 JEP 451）；
-- 同类工具都无法阻止同进程 dump，JavaShield 不承诺绝对安全。
+- 同类工具都无法阻止同进程 dump，JavaShield 不承诺绝对安全；
+- 工具授权的本地试用/配额状态可以删除重置，P0 没有服务端登记；在线激活、心跳与撤销同步在 P2；
+- `activation_required` 目前只生成本机激活记录，离线可用，但没有服务端次数控制；
+- Gradle 插件、WAR、GUI、native 密钥模块尚未实现，功能位已预留在工具许可证中。

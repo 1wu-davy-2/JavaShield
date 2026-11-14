@@ -14,6 +14,7 @@
 
   <modules>
     <module>javashield-core</module>
+    <module>javashield-tool</module>
     <module>javashield-builder</module>
     <module>javashield-agent</module>
     <module>javashield-cli</module>
@@ -33,6 +34,11 @@
       <dependency>
         <groupId>com.javashield</groupId>
         <artifactId>javashield-core</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.javashield</groupId>
+        <artifactId>javashield-tool</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

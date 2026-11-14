@@ -5,6 +5,8 @@ import java.util.Arrays;
 import com.javashield.cli.cmd.BuildCommand;
 import com.javashield.cli.cmd.InspectCommand;
 import com.javashield.cli.cmd.IssueCommand;
+import com.javashield.cli.cmd.LicenseAdminCommand;
+import com.javashield.cli.cmd.LicenseCommand;
 import com.javashield.cli.cmd.MiscCommand;
 import com.javashield.cli.cmd.VerifyCommand;
 import com.javashield.core.Product;
@@ -32,6 +34,10 @@ public final class Main {
                 code = VerifyCommand.run(args);
             } else if ("inspect".equals(command)) {
                 code = InspectCommand.run(args);
+            } else if ("license".equals(command)) {
+                code = LicenseCommand.run(args);
+            } else if ("license-admin".equals(command) || "tool-license".equals(command)) {
+                code = LicenseAdminCommand.run(args);
             } else if ("fingerprint".equals(command)) {
                 code = MiscCommand.fingerprint(args);
             } else if ("selftest".equals(command)) {
@@ -67,6 +73,8 @@ public final class Main {
         System.out.println("  javashield issue --secret <app.jar.jshield-secret.json> [options]");
         System.out.println("  javashield verify --jar <dist/app.jar> --secret <secret.json>");
         System.out.println("  javashield inspect --jar <dist/app.jar> | --secret <secret.json>");
+        System.out.println("  javashield license [status|install|deactivate|revocations] [options]");
+        System.out.println("  javashield license-admin <init-root|issue|show|revoke> [options]");
         System.out.println("  javashield fingerprint");
         System.out.println("  javashield selftest");
         System.out.println();
@@ -92,5 +100,19 @@ public final class Main {
         System.out.println("  -e, --expire <date>  --grace-days <n>  --customer <name>");
         System.out.println("  --bind <machine-id> (repeatable, replaces the current list)");
         System.out.println("  --bind-first-run   --edition <name>  --jvm <range>");
+        System.out.println();
+        System.out.println("Tool licence:");
+        System.out.println("  license status [--license <path>] [--home <dir>]");
+        System.out.println("  license install --license <path> [--home <dir>]");
+        System.out.println("  license deactivate [--home <dir>]");
+        System.out.println("  license revocations --file <path> [--home <dir>]");
+        System.out.println("  license-admin init-root --out <dir> [--force]");
+        System.out.println("  license-admin issue --key <root.key> --out <licence.json>");
+        System.out.println("        [--license-id <id>] [--customer <name>] [--edition pro|enterprise|oem]");
+        System.out.println("        [--feature <name> ...] [--max-builds <n>] [--max-activations <n>]");
+        System.out.println("        [--expires yyyy-MM-dd|never] [--bind any|fixed]");
+        System.out.println("        [--fingerprint <machine-id> ...] [--activation-required]");
+        System.out.println("  license-admin show --license <licence.json> [--public-key <path|base64>]");
+        System.out.println("  license-admin revoke --key <root.key> --license-id <id> --out <revocations.json>");
     }
 }

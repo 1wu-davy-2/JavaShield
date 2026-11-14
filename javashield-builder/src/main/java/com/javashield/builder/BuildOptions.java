@@ -3,6 +3,7 @@ package com.javashield.builder;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /** Options for one build. Kept as a plain bean so the CLI and tests share it. */
 public final class BuildOptions {
@@ -32,6 +33,13 @@ public final class BuildOptions {
 
     /** Optional override for the build secret path; defaults to next to the output. */
     public java.nio.file.Path secretPath;
+
+    /**
+     * Tool licence watermark supplied by the caller after a successful licence
+     * check. JarBuilder copies the public fields into the signed manifest and
+     * the full map into the build secret.
+     */
+    public Map<String, Object> toolWatermark;
 
     /** Optional sink so build tools (Maven, Gradle, GUI) can route progress logs. */
     public LogSink logSink;

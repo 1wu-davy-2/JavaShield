@@ -10,6 +10,8 @@ import com.javashield.core.BuildSecret;
 import com.javashield.core.license.Dates;
 import com.javashield.core.license.License;
 import com.javashield.core.license.LicensePayload;
+import com.javashield.tool.ToolFeatures;
+import com.javashield.tool.ToolLicenseChecker;
 
 /**
  * Re-signs a licence without rebuilding the application.
@@ -23,6 +25,7 @@ public final class IssueCommand {
     }
 
     public static int run(Args args) throws IOException {
+        ToolLicenseChecker.createDefault().require(ToolFeatures.LICENSE_ISSUANCE);
         Path secretPath = Paths.get(args.firstRequired("secret"));
         BuildSecret secret = BuildSecret.load(secretPath);
 

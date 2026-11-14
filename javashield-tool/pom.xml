@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.javashield</groupId>
+    <artifactId>javashield-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>javashield-tool</artifactId>
+  <name>JavaShield Tool Licensing</name>
+  <description>Offline builder licensing, trial quota and build watermark support.</description>
+
+  <properties>
+    <javashield.tool.publicKeyDir>${maven.multiModuleProjectDirectory}/root-keys</javashield.tool.publicKeyDir>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.javashield</groupId>
+      <artifactId>javashield-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+    </dependency>
+  </dependencies>
+
+  <profiles>
+    <!--
+      Official builds embed the issuer public key so that the environment
+      variables cannot be used to swap the trust root. Enable with:
+        mvn -Pembedded-tool-key package
+      The default source is <repo>/root-keys/root.pub. Override with
+      -Djavashield.tool.publicKeyDir=/absolute/path if the key lives elsewhere.
+    -->
+    <profile>
+      <id>embedded-tool-key</id>
+      <build>
+        <resources>
+          <resource>
+            <directory>src/main/resources</directory>
+          </resource>
+          <resource>
+            <directory>${javashield.tool.publicKeyDir}</directory>
+            <targetPath>com/javashield/tool</targetPath>
+            <includes>
+              <include>root.pub</include>
+            </includes>
+          </resource>
+        </resources>
+      </build>
+    </profile>
+  </profiles>
+</project>

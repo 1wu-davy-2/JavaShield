@@ -89,10 +89,11 @@ JavaShield 的答案是：构建期把业务 class 加密，运行期由 agent �
 | 模块 | 职责 | 依赖 |
 | --- | --- | --- |
 | `javashield-core` | 信封、HKDF、ChaCha20、Ed25519、JSON、许可证、清单、指纹、密钥派生 | 零依赖 |
+| `javashield-tool` | 构建器授权：工具许可证、试用/配额、状态存储、水印 | core |
 | `javashield-agent` | `premain`/`agentmain`、许可闸门、清单校验、payload 索引、transformer | core |
 | `javashield-builder` | ASM stub、jar 重写、加密与清单 | core + ASM |
-| `javashield-cli` | 命令行、签发/校验 | builder |
-| `javashield-maven-plugin` | package 阶段自动加密 | builder |
+| `javashield-cli` | 命令行、签发/校验、工具授权与离线签发 | builder + tool |
+| `javashield-maven-plugin` | package 阶段自动加密与工具授权闸门 | builder + tool |
 
 ---
 
@@ -291,15 +292,17 @@ transformer.transform(loader, name, ...)
 
 ### 9.3 试用
 
-复用 PyShield 的试用服务：exe/jar 首次启动生成本机序列号 → 官网申请 → 服务端签发 14 天试用许可 → 深链或轮询回传。M6 实现，协议保持一致，仅在 payload 增加 `product=javashield`。
+P0 已实现**离线本地试用**：首次真正构建时写入 HMAC 状态的开始日期，14 天 / 3 次构建，无需联网；`license status` 不会启动计时。试用策略与付费版共用 `ToolTrialPolicy`，CLI 与 Maven 插件行为一致。
+
+P1 复用 PyShield 的试用登记服务：首次启动生成 `JS-XXXX-XXXX-XXXX` 序列号 → 官网申请 → 服务端签发试用许可 → 深链或轮询回传。协议保持一致，仅在 payload 增加 `product=javashield`。
 
 ### 9.4 版本划分
 
 | 版本 | 能力 |
 | --- | --- |
-| Trial | stub 模式、AES-GCM、14 天 / 10 次构建、禁 native |
-| Pro | in-place + stub、ChaCha20、产物签发、无限构建 |
-| Enterprise | 首次绑定、时钟保护、CI 授权、OEM 白标、native 密钥模块 |
+| Trial | stub 模式、全部密码套件、14 天 / 3 次构建；禁 in-place、full、客户水印、机器绑定 |
+| Pro | in-place + stub、full 完整性、客户水印、机器绑定、产物签发 |
+| Enterprise | 在线/离线激活、CI 授权、时钟保护、OEM 白标、native 密钥模块、GUI |
 
 ---
 
@@ -344,7 +347,7 @@ transformer.transform(loader, name, ...)
 | **M3 运行时** | agent、许可闸门、索引、transformer | 加密 jar 能启动；无 agent 必失败；错许可必失败 |
 | **M4 CLI 与文档** | build/issue/verify/inspect/fingerprint/selftest | 一条命令完成构建与续期；README/runbook 可照做 |
 | **M5 框架适配** | Spring Boot fat jar、WAR、Maven 插件 | 真实 Boot 3.x 项目启动、扫描、Actuator 正常 |
-| **M6 商业化** | 工具授权、试用、GUI、native 密钥模块 | 与 PyShield 共用签发后台；试用→付费闭环 |
+| **M6 商业化** | 工具授权、试用、GUI、native 密钥模块 | P0：工具授权 + 本地试用 + 构建水印；P1/P2：与 PyShield 共用签发后台、激活与撤销；试用→付费闭环 |
 
 当前进度在本文末尾维护。
 
@@ -379,7 +382,7 @@ transformer.transform(loader, name, ...)
 ## 14. 工程约定
 
 - Java 8 语法与 API（`--release 8`），不引入 Lombok、不引入日志框架；
-- core 零第三方依赖；CLI 只依赖 ASM；
+- core 与 tool 零第三方依赖；CLI 通过 builder 引入 ASM；
 - 所有对外错误信息中文/英文各一条？——统一英文短句，文档中文；
 - 提交粒度按模块，commit message 用 `feat/fix/docs/test/chore` 前缀；
 - 版本号 `0.x` 期间不保证许可证格式兼容，`1.0` 后冻结。
@@ -396,7 +399,9 @@ transformer.transform(loader, name, ...)
 - [x] M5a Spring Boot 3.2.12 fat jar 回归（组件扫描、DI、配置绑定、Actuator；修复 STORED 嵌套 jar 与目录条目）
 - [x] M5b Maven 插件（package 阶段 protect、agent 内嵌、密钥归档、幂等构建）
 - [ ] M5c WAR（需 webapp loader 懒初始化）、Spring Boot 2.7 / 3.3 回归、Gradle 插件
-- [ ] M6 商业化：工具授权、试用、GUI、native 密钥模块
+- [x] M6a 工具授权 P0：`javashield-tool` 模块、离线工具许可证、试用/月度配额、状态码、CLI/Maven 闸门、构建水印、撤销列表、离线签发命令（34 个 tool 测试）
+- [ ] M6b 试用登记（P1）与在线/离线激活、心跳、撤销同步、CI 授权（P2）
+- [ ] M6c GUI、native 密钥模块、安装包（P3）
 
 ### 0.1 实测记录（JDK 11 + JDK 17）
 
@@ -414,7 +419,8 @@ transformer.transform(loader, name, ...)
 | 固定机器绑定 | 非白名单机器被拒 |
 | 绑定记录篡改 | `binding record was modified` |
 | AES-256-GCM / ChaCha20-Poly1305 / 纯 ChaCha20 | 全部端到端通过 |
-| 自动化测试 | 56 个通过（core 48 + cli 8） |
+| 自动化测试 | 91 个通过（core 48 + builder 9 + tool 34） |
+| 工具授权 P0 | 试用 3 次后拒绝；Pro 许可证解锁 in-place / 客户水印；月度配额耗尽拒绝；Maven 插件闸门与清单水印实测通过 |
 | Spring Boot 3.2.12 fat jar（JDK 17） | 正常启动；bean 扫描 255 个；`/api/hello`、`/actuator/health`、`verify` 全部通过 |
 | Spring Boot 不挂 agent | `LinkageError`，启动失败 |
 | Spring Boot + in-place | Spring ASM 扫描失败（预期，stub 模式强制） |

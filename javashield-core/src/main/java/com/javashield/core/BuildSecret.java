@@ -36,6 +36,7 @@ public final class BuildSecret {
     private byte[] buildKey;
     private byte[] signingKey;
     private byte[] publicKey;
+    private Map<String, Object> toolLicense;
 
     public int getFormat() {
         return format;
@@ -137,6 +138,14 @@ public final class BuildSecret {
         this.publicKey = publicKey;
     }
 
+    public Map<String, Object> getToolLicense() {
+        return toolLicense;
+    }
+
+    public void setToolLicense(Map<String, Object> toolLicense) {
+        this.toolLicense = toolLicense;
+    }
+
     public Map<String, Object> toMap() {
         Map<String, Object> map = new LinkedHashMap<String, Object>();
         map.put("format", Long.valueOf(format));
@@ -153,6 +162,9 @@ public final class BuildSecret {
         map.put("build_key", base64(buildKey));
         map.put("signing_key", base64(signingKey));
         map.put("public_key", base64(publicKey));
+        if (toolLicense != null) {
+            map.put("tool_license", toolLicense);
+        }
         return map;
     }
 
@@ -172,6 +184,7 @@ public final class BuildSecret {
         secret.buildKey = bytes(map.get("build_key"));
         secret.signingKey = bytes(map.get("signing_key"));
         secret.publicKey = bytes(map.get("public_key"));
+        secret.toolLicense = mapValue(map.get("tool_license"));
         return secret;
     }
 
@@ -209,5 +222,10 @@ public final class BuildSecret {
 
     private static String text(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> mapValue(Object value) {
+        return value instanceof Map ? (Map<String, Object>) value : null;
     }
 }

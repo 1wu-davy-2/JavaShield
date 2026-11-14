@@ -21,8 +21,29 @@ jobs:
           java-version: 11
           cache: maven
 
+      - name: Stage tool trust root
+        env:
+          TOOL_PUBLIC_KEY: ${{ secrets.JAVASHIELD_TOOL_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TOOL_PUBLIC_KEY" ]; then
+            mkdir -p root-keys
+            printf '%s\n' "$TOOL_PUBLIC_KEY" > root-keys/root.pub
+          fi
+
       - name: Build and test
-        run: mvn -B -ntp clean package
+        env:
+          TOOL_PUBLIC_KEY: ${{ secrets.JAVASHIELD_TOOL_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TOOL_PUBLIC_KEY" ]; then
+            mvn -B -ntp -Pembedded-tool-key clean package
+            unzip -l javashield-cli/target/javashield.jar \
+              | grep -q 'com/javashield/tool/root.pub'
+          else
+            echo "::warning::JAVASHIELD_TOOL_PUBLIC_KEY is not set; the release will not embed a tool trust root"
+            mvn -B -ntp clean package
+          fi
 
       - name: Stage artifacts
         run: |
