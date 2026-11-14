@@ -1,4 +1,4 @@
-package com.javashield.cli.builder;
+package com.javashield.builder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -23,20 +23,20 @@ class StubGeneratorTest {
 
     @Test
     void stubKeepsMetadataAndDropsBusinessStrings() throws Exception {
-        byte[] original = read("/com/javashield/cli/fixture/Target.class");
+        byte[] original = read("/com/javashield/builder/fixture/Target.class");
         byte[] stub = StubGenerator.stub(original);
 
-        assertEquals("com/javashield/cli/fixture/Target", new ClassReader(stub).getClassName());
+        assertEquals("com/javashield/builder/fixture/Target", new ClassReader(stub).getClassName());
         assertTrue(stub.length < original.length, "stub should be smaller than the original");
 
         String raw = new String(stub, LATIN_1);
         assertFalse(raw.contains("business-secret-value"), "string constants must not leak into the stub");
-        assertTrue(raw.contains("com/javashield/cli/fixture/Demo"), "annotations must be preserved");
+        assertTrue(raw.contains("com/javashield/builder/fixture/Demo"), "annotations must be preserved");
     }
 
     @Test
     void everyConcreteMethodBecomesAThrow() throws Exception {
-        byte[] stub = StubGenerator.stub(read("/com/javashield/cli/fixture/Target.class"));
+        byte[] stub = StubGenerator.stub(read("/com/javashield/builder/fixture/Target.class"));
         final List<String> answerOpcodes = new ArrayList<String>();
         final boolean[] answerAnnotated = {false};
 
@@ -95,7 +95,7 @@ class StubGeneratorTest {
 
     @Test
     void classAnnotationSurvives() throws Exception {
-        byte[] stub = StubGenerator.stub(read("/com/javashield/cli/fixture/Target.class"));
+        byte[] stub = StubGenerator.stub(read("/com/javashield/builder/fixture/Target.class"));
         final boolean[] seen = {false};
         new ClassReader(stub).accept(new ClassVisitor(Opcodes.ASM9) {
             @Override

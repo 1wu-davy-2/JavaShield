@@ -9,7 +9,7 @@ import java.time.ZoneOffset;
 import java.util.Map;
 
 import com.javashield.cli.Args;
-import com.javashield.cli.builder.JarVerifier;
+import com.javashield.builder.JarVerifier;
 import com.javashield.core.BuildSecret;
 import com.javashield.core.Fingerprint;
 import com.javashield.core.license.License;

@@ -1,4 +1,4 @@
-package com.javashield.cli.builder;
+package com.javashield.builder;
 
 import java.net.URISyntaxException;
 import java.nio.file.Files;

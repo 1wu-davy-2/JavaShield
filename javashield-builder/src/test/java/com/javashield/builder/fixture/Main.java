@@ -1,4 +1,4 @@
-package com.javashield.cli.fixture;
+package com.javashield.builder.fixture;
 
 public final class Main {
 

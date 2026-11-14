@@ -1,4 +1,4 @@
-package com.javashield.cli.builder;
+package com.javashield.builder;
 
 import java.nio.file.Path;
 

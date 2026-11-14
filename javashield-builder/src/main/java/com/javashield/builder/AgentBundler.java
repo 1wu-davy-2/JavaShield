@@ -1,4 +1,4 @@
-package com.javashield.cli.builder;
+package com.javashield.builder;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;

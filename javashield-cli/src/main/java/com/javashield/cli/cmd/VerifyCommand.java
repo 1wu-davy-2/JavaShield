@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.javashield.cli.Args;
-import com.javashield.cli.builder.JarVerifier;
+import com.javashield.builder.JarVerifier;
 import com.javashield.core.BuildSecret;
 import com.javashield.core.manifest.Manifest;
 

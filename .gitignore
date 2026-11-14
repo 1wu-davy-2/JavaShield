@@ -12,3 +12,6 @@ target/
 # generated sample output
 samples/**/dist*/
 samples/**/classes/
+
+# build secrets archived by the maven plugin
+.javashield/

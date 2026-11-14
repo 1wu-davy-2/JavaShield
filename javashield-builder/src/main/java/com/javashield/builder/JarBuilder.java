@@ -1,4 +1,4 @@
-package com.javashield.cli.builder;
+package com.javashield.builder;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -49,8 +49,14 @@ public final class JarBuilder {
     private JarBuilder() {
     }
 
-    public static BuildResult build(BuildOptions options) throws IOException {
-        validate(options);
+    /** Returns true when the jar already contains a JavaShield manifest. */
+    public static boolean isProtected(Path jarPath) throws IOException {
+        try (JarFile jar = new JarFile(jarPath.toFile(), false)) {
+            return jar.getJarEntry(Product.MANIFEST_ENTRY) != null;
+        }
+    }
+
+    public static BuildResult build(BuildOptions options) throws IOException {        validate(options);
         Path input = options.input.toAbsolutePath();
         Path output = options.output.toAbsolutePath();
         Path parent = output.getParent() == null ? Paths.get(".").toAbsolutePath() : output.getParent();
@@ -92,11 +98,11 @@ public final class JarBuilder {
             boolean fullIntegrity = "full".equalsIgnoreCase(options.integrity);
             boolean embed = options.embedAgent && options.agentJar != null;
             if (embed && input.getFileName().toString().toLowerCase().endsWith(".war")) {
-                warn(warned, "war files cannot embed an agent; start Tomcat with -javaagent");
+                warn(options, warned, "war files cannot embed an agent; start Tomcat with -javaagent");
                 embed = false;
             }
             if (embed && targetManifest.getMainAttributes().getValue(Attributes.Name.MAIN_CLASS) == null) {
-                warn(warned, "jar has no Main-Class; the agent is not embedded, start with -javaagent");
+                warn(options, warned, "jar has no Main-Class; the agent is not embedded, start with -javaagent");
                 embed = false;
             }
             if (embed) {
@@ -119,7 +125,7 @@ public final class JarBuilder {
                         continue;
                     }
                     if (isSignatureFile(name)) {
-                        warn(warned, "dropping jar signature file " + name);
+                        warn(options, warned, "dropping jar signature file " + name);
                         continue;
                     }
                     if (isTarget(name, prefix, options, warned)) {
@@ -145,7 +151,9 @@ public final class JarBuilder {
         move(jarOut, output, options.force);
 
         Path licensePath = parent.resolve(Product.LICENSE_FILE);
-        Path secretPath = Paths.get(output.toString() + Product.SECRET_SUFFIX);
+        Path secretPath = options.secretPath != null
+                ? options.secretPath
+                : Paths.get(output.toString() + Product.SECRET_SUFFIX);
         Path agentPath = parent.resolve("jshield-agent.jar");
 
         LicensePayload payload = new LicensePayload();
@@ -183,17 +191,17 @@ public final class JarBuilder {
         }
 
         long size = Files.size(output);
-        System.out.println("[javashield] build id      : " + buildId);
-        System.out.println("[javashield] cipher        : " + cipher);
-        System.out.println("[javashield] mode          : " + (options.inPlace ? "in-place" : "stub"));
-        System.out.println("[javashield] classes       : " + classCount);
-        System.out.println("[javashield] output        : " + output + " (" + size + " bytes)");
-        System.out.println("[javashield] licence       : " + licensePath);
-        System.out.println("[javashield] build secret  : " + secretPath);
+        log(options, "build id      : " + buildId);
+        log(options, "cipher        : " + cipher);
+        log(options, "mode          : " + (options.inPlace ? "in-place" : "stub"));
+        log(options, "classes       : " + classCount);
+        log(options, "output        : " + output + " (" + size + " bytes)");
+        log(options, "licence       : " + licensePath);
+        log(options, "build secret  : " + secretPath);
         if (options.agentJar != null) {
-            System.out.println("[javashield] agent         : " + agentPath);
+            log(options, "agent         : " + agentPath);
         }
-        System.out.println("[javashield] keep the build secret offline; never ship it");
+        log(options, "keep the build secret offline; never ship it");
 
         return new BuildResult(output, licensePath, secretPath, agentPath,
                 buildId, cipher, classCount, size);
@@ -278,7 +286,7 @@ public final class JarBuilder {
             return false;
         }
         if (name.endsWith("module-info.class")) {
-            warn(warned, "module-info.class stays in plaintext");
+            warn(options, warned, "module-info.class stays in plaintext");
             return false;
         }
         if (name.endsWith("package-info.class")) {
@@ -394,9 +402,21 @@ public final class JarBuilder {
         }
     }
 
-    private static void warn(Set<String> warned, String message) {
+    private static void warn(BuildOptions options, Set<String> warned, String message) {
         if (warned.add(message)) {
-            System.err.println("[javashield] warning: " + message);
+            if (options.logSink != null) {
+                options.logSink.log("warning: " + message);
+            } else {
+                System.err.println("[javashield] warning: " + message);
+            }
+        }
+    }
+
+    private static void log(BuildOptions options, String message) {
+        if (options.logSink != null) {
+            options.logSink.log(message);
+        } else {
+            System.out.println("[javashield] " + message);
         }
     }
 

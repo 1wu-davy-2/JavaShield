@@ -1,4 +1,4 @@
-package com.javashield.cli.builder;
+package com.javashield.builder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -56,7 +56,7 @@ class BuildIntegrationTest {
 
         try (JarFile jar = new JarFile(output.toFile())) {
             assertNotNull(jar.getJarEntry(Product.MANIFEST_ENTRY));
-            assertNotNull(jar.getJarEntry("com/javashield/cli/fixture/Target.class"));
+            assertNotNull(jar.getJarEntry("com/javashield/builder/fixture/Target.class"));
             assertEquals("com.javashield.agent.Agent",
                     jar.getManifest().getMainAttributes().getValue("Launcher-Agent-Class"));
             Map<String, Object> manifest = JarVerifier.readManifest(output);
@@ -80,7 +80,7 @@ class BuildIntegrationTest {
         JarBuilder.build(options);
 
         try (JarFile jar = new JarFile(output.toFile())) {
-            JarEntry entry = jar.getJarEntry("com/javashield/cli/fixture/Target.class");
+            JarEntry entry = jar.getJarEntry("com/javashield/builder/fixture/Target.class");
             assertNotNull(entry);
             byte[] data = readAll(jar.getInputStream(entry));
             assertEquals('J', (char) data[0]);
@@ -126,7 +126,7 @@ class BuildIntegrationTest {
         BuildSecret secret = BuildSecret.load(result.secret);
         assertTrue(JarVerifier.verify(output, secret).isEmpty());
 
-        rewriteEntry(output, "com/javashield/cli/fixture/Target.class", new byte[]{1, 2, 3});
+        rewriteEntry(output, "com/javashield/builder/fixture/Target.class", new byte[]{1, 2, 3});
         List<String> failures = JarVerifier.verify(output, secret);
         assertFalse(failures.isEmpty());
     }
@@ -140,17 +140,17 @@ class BuildIntegrationTest {
                 "org.springframework.boot.loader.launch.JarLauncher");
         manifest.getMainAttributes().putValue("Spring-Boot-Classes", "BOOT-INF/classes/");
         manifest.getMainAttributes().putValue("Spring-Boot-Lib", "BOOT-INF/lib/");
-        byte[] classBytes = readResource("/com/javashield/cli/fixture/Main.class");
+        byte[] classBytes = readResource("/com/javashield/builder/fixture/Main.class");
         byte[] nested = "nested-jar-bytes".getBytes("UTF-8");
         try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(input), manifest)) {
             for (String directory : new String[]{"BOOT-INF/", "BOOT-INF/classes/",
                     "BOOT-INF/classes/com/", "BOOT-INF/classes/com/javashield/",
                     "BOOT-INF/classes/com/javashield/cli/",
-                    "BOOT-INF/classes/com/javashield/cli/fixture/", "BOOT-INF/lib/"}) {
+                    "BOOT-INF/classes/com/javashield/builder/fixture/", "BOOT-INF/lib/"}) {
                 out.putNextEntry(new JarEntry(directory));
                 out.closeEntry();
             }
-            out.putNextEntry(new JarEntry("BOOT-INF/classes/com/javashield/cli/fixture/Main.class"));
+            out.putNextEntry(new JarEntry("BOOT-INF/classes/com/javashield/builder/fixture/Main.class"));
             out.write(classBytes);
             out.closeEntry();
             JarEntry lib = new JarEntry("BOOT-INF/lib/demo-lib.jar");
@@ -181,10 +181,10 @@ class BuildIntegrationTest {
             assertEquals(java.util.zip.ZipEntry.STORED,
                     jar.getJarEntry("BOOT-INF/lib/demo-lib.jar").getMethod(),
                     "nested jars must stay STORED");
-            assertEquals("com/javashield/cli/fixture/Main",
+            assertEquals("com/javashield/builder/fixture/Main",
                     new org.objectweb.asm.ClassReader(readAll(
                             jar.getInputStream(jar.getJarEntry(
-                                    "BOOT-INF/classes/com/javashield/cli/fixture/Main.class"))))
+                                    "BOOT-INF/classes/com/javashield/builder/fixture/Main.class"))))
                             .getClassName());
         }
     }
@@ -199,16 +199,16 @@ class BuildIntegrationTest {
 
     private Path sampleJar(String name) throws IOException {
         Path jarPath = temp.resolve(name);
-        Path fixtureDir = Paths.get("target/test-classes/com/javashield/cli/fixture");
+        Path fixtureDir = Paths.get("target/test-classes/com/javashield/builder/fixture");
         assertTrue(Files.isDirectory(fixtureDir), "test fixtures were not compiled");
         Manifest manifest = new Manifest();
         manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
-        manifest.getMainAttributes().put(Attributes.Name.MAIN_CLASS, "com.javashield.cli.fixture.Main");
+        manifest.getMainAttributes().put(Attributes.Name.MAIN_CLASS, "com.javashield.builder.fixture.Main");
         try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jarPath), manifest);
              Stream<Path> files = Files.list(fixtureDir)) {
             files.filter(path -> path.toString().endsWith(".class")).forEach(path -> {
                 try {
-                    out.putNextEntry(new JarEntry("com/javashield/cli/fixture/" + path.getFileName()));
+                    out.putNextEntry(new JarEntry("com/javashield/builder/fixture/" + path.getFileName()));
                     out.write(Files.readAllBytes(path));
                     out.closeEntry();
                 } catch (IOException exc) {

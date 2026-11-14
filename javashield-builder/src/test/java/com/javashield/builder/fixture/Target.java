@@ -1,4 +1,4 @@
-package com.javashield.cli.fixture;
+package com.javashield.builder.fixture;
 
 @Demo("target")
 public final class Target {

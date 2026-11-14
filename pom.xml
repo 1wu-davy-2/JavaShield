@@ -14,8 +14,10 @@
 
   <modules>
     <module>javashield-core</module>
+    <module>javashield-builder</module>
     <module>javashield-agent</module>
     <module>javashield-cli</module>
+    <module>javashield-maven-plugin</module>
   </modules>
 
   <properties>
@@ -31,6 +33,11 @@
       <dependency>
         <groupId>com.javashield</groupId>
         <artifactId>javashield-core</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.javashield</groupId>
+        <artifactId>javashield-builder</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

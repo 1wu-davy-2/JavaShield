@@ -4,10 +4,10 @@ import java.io.IOException;
 import java.nio.file.Paths;
 
 import com.javashield.cli.Args;
-import com.javashield.cli.builder.AgentLocator;
-import com.javashield.cli.builder.BuildOptions;
-import com.javashield.cli.builder.BuildResult;
-import com.javashield.cli.builder.JarBuilder;
+import com.javashield.builder.AgentLocator;
+import com.javashield.builder.BuildOptions;
+import com.javashield.builder.BuildResult;
+import com.javashield.builder.JarBuilder;
 
 /** {@code javashield build -i app.jar -o dist/app.jar} */
 public final class BuildCommand {

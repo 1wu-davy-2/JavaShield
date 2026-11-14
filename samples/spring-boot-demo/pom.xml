@@ -39,4 +39,32 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>javashield</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>com.javashield</groupId>
+            <artifactId>javashield-maven-plugin</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+            <executions>
+              <execution>
+                <id>protect</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>protect</goal>
+                </goals>
+              </execution>
+            </executions>
+            <configuration>
+              <customer>Spring Regression</customer>
+              <expire>2028-12-31</expire>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

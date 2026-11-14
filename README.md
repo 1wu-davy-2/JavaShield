@@ -10,6 +10,7 @@
 - 构建：Maven 3.6+，JDK 11 编译（产物为 Java 8 字节码）
 - 已验证：JDK 11 上的普通可执行 jar、JDK 17 上的 Spring Boot 3.2.12 fat jar（组件扫描、依赖注入、配置绑定、Actuator）、三种密码套件、stub / in-place 两种模式
 - 未验证：JDK 8/21 实机、Spring Boot 2.7
+- 接入方式：CLI 与 Maven 插件（`package` 阶段自动保护，客户项目零改造）
 - 暂不支持：WAR（0.2 计划，需要 webapp 类加载器懒初始化）
 - 测试：56 个单元与集成测试通过
 
@@ -69,6 +70,31 @@ java -jar javashield.jar issue --secret dist/myapp.jar.jshield-secret.json -e 20
 java -jar javashield.jar verify --jar dist/myapp.jar --secret dist/myapp.jar.jshield-secret.json
 java -jar javashield.jar inspect --secret dist/myapp.jar.jshield-secret.json
 ```
+
+## Maven 插件（推荐）
+
+客户项目不改代码，加一个 profile 即可：
+
+```xml
+<profile>
+  <id>javashield</id>
+  <build><plugins><plugin>
+    <groupId>com.javashield</groupId>
+    <artifactId>javashield-maven-plugin</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <executions><execution>
+      <id>protect</id><phase>package</phase><goals><goal>protect</goal></goals>
+    </execution></executions>
+    <configuration><customer>ACME</customer><expire>2027-12-31</expire></configuration>
+  </plugin></plugins></build>
+</profile>
+```
+
+```bash
+mvn -Pjavashield clean package
+```
+
+插件必须声明在 `spring-boot-maven-plugin` 之后，输入才是 fat jar。构建密钥归档到 `${basedir}/.javashield/`，不会因 `mvn clean` 丢失。详见 [Maven 插件文档](docs/maven-plugin.md)。
 
 ## 两种加密模式
 
@@ -170,11 +196,14 @@ public_key（agent 内置）─────验签──> 拒绝伪造
 ## 项目结构
 
 ```
-javashield-core/     信封、HKDF、ChaCha20、Ed25519、JSON、许可证、清单、指纹
-javashield-agent/    premain/agentmain、许可闸门、完整性校验、transformer
-javashield-cli/      CLI、ASM stub、jar 重写、签发与校验
-docs/                执行计划、格式规范、运维手册
-samples/hello/       端到端示例
+javashield-core/          信封、HKDF、ChaCha20、Ed25519、JSON、许可证、清单、指纹
+javashield-builder/       ASM stub、jar 重写、加密与清单（CLI 与 Maven 插件共用）
+javashield-agent/         premain/agentmain、许可闸门、完整性校验、transformer
+javashield-cli/           CLI：build / issue / verify / inspect / fingerprint / selftest
+javashield-maven-plugin/  package 阶段的 protect goal
+docs/                     执行计划、格式规范、运维手册、回归报告
+samples/hello/            最小端到端示例
+samples/spring-boot-demo/ Spring Boot 3.2 回归工程
 ```
 
 ## 文档
@@ -183,6 +212,7 @@ samples/hello/       端到端示例
 - [格式规范](docs/format.md)：信封、许可证、清单、构建密钥的字节级定义
 - [运维手册](docs/runbook.md)：构建、部署、续期、排障
 - [Spring Boot 3.2 回归报告](docs/spring-boot-regression.md)：真实 fat jar 的验证结果与两个兼容性修复
+- [Maven 插件](docs/maven-plugin.md)：零改造接入、参数、幂等构建与排障
 
 ## 授权
 

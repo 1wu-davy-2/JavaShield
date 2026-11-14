@@ -1,4 +1,4 @@
-package com.javashield.cli.fixture;
+package com.javashield.builder.fixture;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;

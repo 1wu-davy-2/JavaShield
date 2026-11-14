@@ -90,8 +90,9 @@ JavaShield 的答案是：构建期把业务 class 加密，运行期由 agent �
 | --- | --- | --- |
 | `javashield-core` | 信封、HKDF、ChaCha20、Ed25519、JSON、许可证、清单、指纹、密钥派生 | 零依赖 |
 | `javashield-agent` | `premain`/`agentmain`、许可闸门、清单校验、payload 索引、transformer | core |
-| `javashield-cli` | 命令行、构建流水线、ASM stub、jar/war 重写、签发/校验 | core + ASM |
-| `javashield-maven-plugin`（M5） | package 阶段自动加密 | cli |
+| `javashield-builder` | ASM stub、jar 重写、加密与清单 | core + ASM |
+| `javashield-cli` | 命令行、签发/校验 | builder |
+| `javashield-maven-plugin` | package 阶段自动加密 | builder |
 
 ---
 
@@ -393,7 +394,8 @@ transformer.transform(loader, name, ...)
 - [x] M3 运行时：agent、许可闸门、索引、transformer（JDK 11 实测通过）
 - [x] M4 CLI 与文档：build/issue/verify/inspect/fingerprint/selftest、README、格式规范、运维手册
 - [x] M5a Spring Boot 3.2.12 fat jar 回归（组件扫描、DI、配置绑定、Actuator；修复 STORED 嵌套 jar 与目录条目）
-- [ ] M5b WAR（需 webapp loader 懒初始化）、Maven 插件、Spring Boot 2.7 / 3.3 回归
+- [x] M5b Maven 插件（package 阶段 protect、agent 内嵌、密钥归档、幂等构建）
+- [ ] M5c WAR（需 webapp loader 懒初始化）、Spring Boot 2.7 / 3.3 回归、Gradle 插件
 - [ ] M6 商业化：工具授权、试用、GUI、native 密钥模块
 
 ### 0.1 实测记录（JDK 11 + JDK 17）
@@ -416,3 +418,5 @@ transformer.transform(loader, name, ...)
 | Spring Boot 3.2.12 fat jar（JDK 17） | 正常启动；bean 扫描 255 个；`/api/hello`、`/actuator/health`、`verify` 全部通过 |
 | Spring Boot 不挂 agent | `LinkageError`，启动失败 |
 | Spring Boot + in-place | Spring ASM 扫描失败（预期，stub 模式强制） |
+| Maven 插件 `mvn -Pjavashield package` | 自动保护 4 个类，产物可运行，接口与 bean 扫描正常 |
+| Maven 插件重复执行 | 检测到已保护并跳过，`mvn clean package` 强制重建 |

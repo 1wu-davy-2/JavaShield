@@ -1,4 +1,4 @@
-package com.javashield.cli.builder;
+package com.javashield.builder;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -29,4 +29,14 @@ public final class BuildOptions {
     public boolean embedAgent = true;
 
     public boolean force;
+
+    /** Optional override for the build secret path; defaults to next to the output. */
+    public java.nio.file.Path secretPath;
+
+    /** Optional sink so build tools (Maven, Gradle, GUI) can route progress logs. */
+    public LogSink logSink;
+
+    public interface LogSink {
+        void log(String message);
+    }
 }
