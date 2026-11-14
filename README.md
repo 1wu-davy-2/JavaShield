@@ -1,5 +1,7 @@
 # JavaShield
 
+[![ci](https://github.com/1wu-davy-2/JavaShield/actions/workflows/ci.yml/badge.svg)](https://github.com/1wu-davy-2/JavaShield/actions/workflows/ci.yml)
+
 面向 JVM 服务端的字节码保护与授权交付工具。构建期把业务 class 加密成密文，运行期由 Java Agent 在类加载前解密；授权用 Ed25519 签名的离线许可证，**续期只替换一个 `jshield.lic`，不重新打包**。
 
 它不是 PyShield 的 Java 移植，而是同一套「密钥体系 + 许可体系 + 商业流程」在 JVM 上的重新实现：信封格式、许可证字段、机器指纹算法与 PyShield 保持一致，构建器和运行时按 JVM 的类加载机制重写。
@@ -216,4 +218,6 @@ samples/spring-boot-demo/ Spring Boot 3.2 回归工程
 
 ## 授权
 
-内部商业项目，版权归作者所有。第三方依赖仅 ASM（构建器，BSD）与 JUnit（测试，EPL）。
+本项目采用 JavaShield 商业软件许可协议，详见 [LICENSE](LICENSE)。提交代码或补丁前请阅读 [CLA.md](CLA.md)。
+
+第三方依赖：ASM（BSD-3-Clause，仅构建器使用）、JUnit 5（EPL-2.0，仅测试使用）。运行时 agent 与 core 零第三方依赖。

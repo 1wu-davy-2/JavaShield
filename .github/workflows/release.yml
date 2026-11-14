@@ -1,0 +1,46 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 11
+          cache: maven
+
+      - name: Build and test
+        run: mvn -B -ntp clean package
+
+      - name: Stage artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp javashield-cli/target/javashield.jar out/
+          cp javashield-agent/target/javashield-agent-*-agent.jar out/jshield-agent.jar
+          cp javashield-maven-plugin/target/javashield-maven-plugin-*.jar out/
+          ls -lh out
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME:-manual-$(date +%Y%m%d%H%M)}"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" out/* --clobber
+          else
+            gh release create "$TAG" out/* --generate-notes
+          fi

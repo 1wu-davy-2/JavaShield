@@ -1,0 +1,158 @@
+name: ci
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: unit (${{ matrix.os }}, jdk ${{ matrix.java }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            java: 11
+          - os: ubuntu-latest
+            java: 17
+          - os: ubuntu-latest
+            java: 21
+          - os: windows-latest
+            java: 11
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      - name: Build and test
+        run: mvn -B -ntp clean verify
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-${{ matrix.os }}-${{ matrix.java }}
+          path: '**/target/surefire-reports/*.txt'
+          if-no-files-found: ignore
+
+  e2e-cli:
+    name: e2e cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 11
+          cache: maven
+
+      - name: Build the tool
+        run: mvn -B -ntp -DskipTests package
+
+      - name: Build the sample application
+        run: |
+          set -euo pipefail
+          cd samples/hello
+          mkdir -p classes
+          javac -encoding UTF-8 -d classes $(find src -name '*.java')
+          jar --create --file hello.jar --main-class com.acme.Hello -C classes .
+
+      - name: Protect and run
+        run: |
+          set -euo pipefail
+          cd samples/hello
+          java -jar ../../javashield-cli/target/javashield.jar build \
+            -i hello.jar -o dist/hello.jar -e 2028-12-31
+          java -jar dist/hello.jar > out.txt
+          cat out.txt
+          grep -q '^hello, JavaShield$' out.txt
+          grep -q '^sum(1..100)=5050$' out.txt
+          grep -q '^marker=greeter$' out.txt
+
+      - name: Verify the package
+        run: |
+          java -jar javashield-cli/target/javashield.jar verify \
+            --jar samples/hello/dist/hello.jar \
+            --secret samples/hello/dist/hello.jar.jshield-secret.json
+
+      - name: Running without the agent must fail
+        run: |
+          set -euo pipefail
+          cd samples/hello
+          java -jar ../../javashield-cli/target/javashield.jar build \
+            -i hello.jar -o dist-noagent/hello.jar --no-embed
+          if java -jar dist-noagent/hello.jar > /dev/null 2>&1; then
+            echo "protected jar started without the agent"
+            exit 1
+          fi
+          echo "startup correctly refused"
+
+  e2e-spring-boot:
+    name: e2e spring boot 3.2
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+
+      - name: Install the tool and the Maven plugin
+        run: mvn -B -ntp -DskipTests install
+
+      - name: Build a protected Spring Boot application
+        run: |
+          set -euo pipefail
+          cd samples/spring-boot-demo
+          mvn -B -ntp -Pjavashield clean package
+          unzip -l target/demo-1.0.0.jar | grep -q 'META-INF/jshield-manifest.json'
+
+      - name: Start and probe
+        run: |
+          set -euo pipefail
+          cd samples/spring-boot-demo
+          java -jar target/demo-1.0.0.jar > app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill $APP_PID || true' EXIT
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:18080/api/ping > /dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          body=$(curl -fsS "http://localhost:18080/api/hello?name=ci")
+          echo "$body"
+          echo "$body" | grep -q '"message":"hello, ci from acme-2026"'
+          curl -fsS http://localhost:18080/actuator/health | grep -q '"status":"UP"'
+          curl -fsS http://localhost:18080/actuator/beans | grep -q 'helloController'
+          grep -q 'javashield] ready' app.log
+
+      - name: Upload application log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spring-boot-app-log
+          path: samples/spring-boot-demo/app.log
+          if-no-files-found: ignore
