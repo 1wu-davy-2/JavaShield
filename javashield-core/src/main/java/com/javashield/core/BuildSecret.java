@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
+import com.javashield.core.io.SafeFiles;
 import com.javashield.core.json.Json;
 import com.javashield.core.license.Dates;
 
@@ -189,16 +190,24 @@ public final class BuildSecret {
     }
 
     public void save(Path path) throws IOException {
-        Path parent = path.toAbsolutePath().getParent();
+        Path absolute = path.toAbsolutePath();
+        Path parent = absolute.getParent();
         if (parent != null) {
             Files.createDirectories(parent);
         }
-        Files.write(path, (Json.pretty(toMap()) + "\n").getBytes(UTF_8));
-        restrictPermissions(path);
+        Path temporary = Files.createTempFile(parent, ".jshield-secret-", ".tmp");
+        try {
+            Files.write(temporary, (Json.pretty(toMap()) + "\n").getBytes(UTF_8));
+            restrictPermissions(temporary);
+            SafeFiles.fsync(temporary);
+            SafeFiles.move(temporary, absolute);
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
     }
 
     public static BuildSecret load(Path path) throws IOException {
-        String text = new String(Files.readAllBytes(path), UTF_8);
+        String text = new String(SafeFiles.readAllBytes(path), UTF_8);
         return fromMap(Json.parseObject(text));
     }
 

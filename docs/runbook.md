@@ -105,6 +105,8 @@ java -Djshield.binding=/var/lib/myapp/binding.json \
      -jar myapp.jar
 ```
 
+如果状态目录确实不可写，可追加 `-Djshield.state.volatile=true`（或环境变量 `JSHIELD_ALLOW_VOLATILE_STATE=1`）。此时时钟回拨检测降级为尽力而为；默认情况下不可写会拒绝启动。首次绑定同样只能使用持久路径，临时目录会被拒绝。
+
 ### 3.3 验证
 
 ```bash
@@ -147,7 +149,11 @@ java -cp jshield-agent.jar com.javashield.core.Fingerprint
 | `this machine is not licensed` | 机器码不在白名单 | 取客户机器码后重新签发 |
 | `this package is bound to another machine` | 整包被复制到别的机器 | 重新签发，或由构建方删除绑定记录后重绑 |
 | `binding record was modified` | 绑定文件被改 | 删除并由构建方重新签发 |
-| `system clock moved backwards` | 系统时间回拨 | 校正 NTP；确认后删除 `~/.jshield/<build_id>.state` |
+| `first-run binding is not supported in a temporary directory` | 首次绑定写到了临时目录 | 改用固定机器码，或把 `-Djshield.binding` 指向持久路径 |
+| `system clock moved backwards` | 系统时间回拨 | 校正 NTP；确认后删除 `~/.jshield/<build_id>.state` 与 `.state.bak` 重新锚定 |
+| `clock state contains an implausible future date` | 曾把系统时间调到未来 | 校正时间后删除两份时钟状态并重启 |
+| `clock state is damaged` | 两份状态都损坏或不可读 | 恢复备份；否则删除两份状态重新锚定（会重置回拨历史） |
+| `cannot lock clock state` / `timed out waiting for state lock` | 另一个进程长期占用状态锁，或目录不可写 | 确认没有卡死的实例；检查状态目录权限，只读部署用 `-Djshield.state.volatile=true` |
 | `class integrity check failed: X` | jar 被改包或重新压缩 | 从原始包重新构建 |
 | `manifest signature is invalid` | 清单被替换 | 重新构建 |
 | `cannot locate the agent jar` | 发布目录缺少 agent | `--agent <path>` 或把 `jshield-agent.jar` 放到 CLI 同级 |
@@ -158,6 +164,8 @@ java -cp jshield-agent.jar com.javashield.core.Fingerprint
 | `monthly build quota exhausted [quota_exhausted]` | 当月构建额度用尽 | 等下一个自然月，或签发更高 `--max-builds` 的许可证 |
 | `tool licence is bound to another machine [machine_mismatch]` | 工具许可证绑定了别的机器 | 用 `javashield fingerprint` 取本机码后重新签发 |
 | `tool state signature is invalid [state_invalid]` | 试用/配额/激活状态被修改或损坏 | 删除状态目录下对应的 `trial.json` / `quota.json` / `install.json` 后重试（会重置本地计数） |
+| `system clock is earlier than the recorded trial state [state_invalid]` / `quota state belongs to a later month` | 系统时间回拨到试用或配额记录之前 | 校正系统时间；确认后删除对应状态文件重置本地计数 |
+| `cannot lock tool state [state_io]` | 另一个构建进程持有状态锁，或状态目录不可写 | 等待并发构建结束；检查 `JAVASHIELD_HOME` / `-Djavashield.home` 权限 |
 | `tool licence is invalid [license_invalid]` | 文件损坏、格式不对或签名不匹配 | 确认 `JAVASHIELD_TOOL_PUBLIC_KEY` / 嵌入的 `root.pub` 与签发根一致 |
 | `no tool public key is configured` | 源码构建没有信任根 | 设置 `JAVASHIELD_TOOL_PUBLIC_KEY`，或正式发布时嵌入 `root.pub` |
 
@@ -219,7 +227,11 @@ transformer 失败会抛 `IllegalStateException: javashield: cannot decrypt prot
 - [ ] 记录 build_id 与对应的客户
 - [ ] 发布版工具已嵌入 `com/javashield/tool/root.pub`（`-Pembedded-tool-key`）
 - [ ] 发布版上 `JAVASHIELD_DEV=1` 无法跳过工具授权
+- [ ] 发布版忽略 `JAVASHIELD_TRIAL_DAYS` / `JAVASHIELD_TRIAL_BUILDS`
 - [ ] `javashield license status` 在发布机与 CI 上返回预期状态
+- [ ] 两个并发构建不会超过试用次数或月度配额
+- [ ] 运行时状态目录可写（或已显式启用 `-Djshield.state.volatile=true`）
+- [ ] 首次绑定路径不在系统临时目录
 
 ---
 
@@ -231,6 +243,9 @@ transformer 失败会抛 `IllegalStateException: javashield: cannot decrypt prot
 - 加密后不能用 `jarsigner` 签名（会与条目哈希冲突）；
 - agent 只能启动期加载，不支持运行期 attach（顺应 JEP 451）；
 - 同类工具都无法阻止同进程 dump，JavaShield 不承诺绝对安全；
-- 工具授权的本地试用/配额状态可以删除重置，P0 没有服务端登记；在线激活、心跳与撤销同步在 P2；
+- 工具授权的本地试用/配额状态可以删除重置，HMAC 只做完整性校验；P0 没有服务端登记，在线激活、心跳与撤销同步在 P2；
+- 运行时时钟状态保留两份副本，但同时删除两份仍会重置回拨历史；首次绑定记录删除后也会重新绑定；
+- `-Djshield.binding` 可把首次绑定记录写到任意持久路径；复制整包并用新路径启动会重新绑定。离线首次绑定只能提高迁移成本，强绑定应使用固定机器码或签名激活；
+- `-Djshield.machine.id` 会覆盖真实机器码。它便于 CI/锁定环境，但也绕过机器绑定；交付给不可信客户前应通过发布流程移除该开关或改用签名激活；
 - `activation_required` 目前只生成本机激活记录，离线可用，但没有服务端次数控制；
 - Gradle 插件、WAR、GUI、native 密钥模块尚未实现，功能位已预留在工具许可证中。

@@ -251,7 +251,7 @@ premain / agentmain
   │    → license_key 解封 → Ed25519 验签 → build_id 匹配
   ├─ 校验 not_before（容差 1 天）、expires + grace_days、fingerprints
   ├─ 首次启动绑定（若启用）：读/写 .jshield-binding.json（HMAC）
-  ├─ 时钟回拨检测：~/.jshield/<build_id>.state（HMAC + last_seen）
+  ├─ 时钟回拨检测：~/.jshield/<build_id>.state + .state.bak（HMAC + last_seen，跨进程锁、双副本自愈）
   ├─ 建立 internalName → payload 条目 索引
   └─ addTransformer(ShieldTransformer)
 
@@ -392,14 +392,14 @@ P1 复用 PyShield 的试用登记服务：首次启动生成 `JS-XXXX-XXXX-XXXX
 ## 15. 进度
 
 - [x] M0 骨架与执行计划
-- [x] M1 密码与许可：信封、HKDF、ChaCha20、Ed25519、JSON、许可证、清单、指纹（48 个 core 测试）
+- [x] M1 密码与许可：信封、HKDF、ChaCha20、Ed25519、JSON、许可证、清单、指纹（53 个 core 测试）
 - [x] M2 构建器：jar 扫描、ASM stub、加密、回写、清单、secret（含 4 个集成测试）
-- [x] M3 运行时：agent、许可闸门、索引、transformer（JDK 11 实测通过）
+- [x] M3 运行时：agent、许可闸门、索引、transformer；时钟双副本自愈、跨进程锁、临时目录拒绝首次绑定（JDK 11 实测通过，14 个 agent 测试）
 - [x] M4 CLI 与文档：build/issue/verify/inspect/fingerprint/selftest、README、格式规范、运维手册
 - [x] M5a Spring Boot 3.2.12 fat jar 回归（组件扫描、DI、配置绑定、Actuator；修复 STORED 嵌套 jar 与目录条目）
 - [x] M5b Maven 插件（package 阶段 protect、agent 内嵌、密钥归档、幂等构建）
 - [ ] M5c WAR（需 webapp loader 懒初始化）、Spring Boot 2.7 / 3.3 回归、Gradle 插件
-- [x] M6a 工具授权 P0：`javashield-tool` 模块、离线工具许可证、试用/月度配额、状态码、CLI/Maven 闸门、构建水印、撤销列表、离线签发命令（34 个 tool 测试）
+- [x] M6a 工具授权 P0：`javashield-tool` 模块、离线工具许可证、试用/月度配额、状态码、CLI/Maven 闸门、构建水印、撤销列表、离线签发命令；跨进程状态锁与试用策略上限（40 个 tool 测试）
 - [ ] M6b 试用登记（P1）与在线/离线激活、心跳、撤销同步、CI 授权（P2）
 - [ ] M6c GUI、native 密钥模块、安装包（P3）
 
@@ -418,9 +418,13 @@ P1 复用 PyShield 的试用登记服务：首次启动生成 `JS-XXXX-XXXX-XXXX
 | 首次启动绑定 | 生成 HMAC 绑定记录；模拟换机被拒 |
 | 固定机器绑定 | 非白名单机器被拒 |
 | 绑定记录篡改 | `binding record was modified` |
+| 首次绑定临时目录 | 拒绝写入，提示使用固定机器码或持久路径 |
+| 时钟状态单副本损坏 / 日期不一致 | 从另一份修复，按较新日期重写两份 |
+| 时钟状态两份损坏 / 未来日期 | 拒绝启动并给出重置路径 |
 | AES-256-GCM / ChaCha20-Poly1305 / 纯 ChaCha20 | 全部端到端通过 |
-| 自动化测试 | 91 个通过（core 48 + builder 9 + tool 34） |
+| 自动化测试 | 116 个通过（core 53 + builder 9 + tool 40 + agent 14） |
 | 工具授权 P0 | 试用 3 次后拒绝；Pro 许可证解锁 in-place / 客户水印；月度配额耗尽拒绝；Maven 插件闸门与清单水印实测通过 |
+| 并发工具授权 | 6 个进程同时构建，恰好 3 次通过，状态锁防止少扣配额 |
 | Spring Boot 3.2.12 fat jar（JDK 17） | 正常启动；bean 扫描 255 个；`/api/hello`、`/actuator/health`、`verify` 全部通过 |
 | Spring Boot 不挂 agent | `LinkageError`，启动失败 |
 | Spring Boot + in-place | Spring ASM 扫描失败（预期，stub 模式强制） |

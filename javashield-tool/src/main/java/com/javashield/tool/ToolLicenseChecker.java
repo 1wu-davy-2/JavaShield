@@ -1,5 +1,6 @@
 package com.javashield.tool;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -10,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
+import com.javashield.core.io.StateLock;
 import com.javashield.core.license.Dates;
 
 /**
@@ -30,7 +32,7 @@ public final class ToolLicenseChecker {
     private static final String TRIAL_PURPOSE = "trial";
     private static final String QUOTA_PURPOSE = "quota";
     private static final String INSTALL_PURPOSE = "install";
-    private static final Object STATE_LOCK = new Object();
+    private static final int STATE_MAX_FUTURE_DAYS = 7;
 
     private final ToolStateStore store;
     private final byte[] publicKey;
@@ -61,8 +63,12 @@ public final class ToolLicenseChecker {
     public ToolLicenseChecker(ToolStateStore store, byte[] publicKey, boolean devMode,
                               LocalDate today, Path licensePath) {
         this(store, publicKey, devMode, today, licensePath,
-                environmentInt("JAVASHIELD_TRIAL_DAYS", DEFAULT_TRIAL_DAYS),
-                environmentInt("JAVASHIELD_TRIAL_BUILDS", DEFAULT_TRIAL_BUILDS));
+                !ToolLicense.hasEmbeddedPublicKey()
+                        ? environmentInt("JAVASHIELD_TRIAL_DAYS", DEFAULT_TRIAL_DAYS)
+                        : DEFAULT_TRIAL_DAYS,
+                !ToolLicense.hasEmbeddedPublicKey()
+                        ? environmentInt("JAVASHIELD_TRIAL_BUILDS", DEFAULT_TRIAL_BUILDS)
+                        : DEFAULT_TRIAL_BUILDS);
     }
 
     public ToolLicenseChecker(ToolStateStore store, byte[] publicKey, boolean devMode,
@@ -257,15 +263,19 @@ public final class ToolLicenseChecker {
         if (status.isDevelopment()) {
             return status;
         }
-        synchronized (STATE_LOCK) {
-            if (status.isTrial()) {
-                return recordTrialBuild(status);
+        final ToolLicenseStatus current = status;
+        return locked(new StateLock.Action<ToolLicenseStatus>() {
+            @Override
+            public ToolLicenseStatus run() throws IOException {
+                if (current.isTrial()) {
+                    return recordTrialBuild(current);
+                }
+                if (current.isLicensed()) {
+                    return recordLicensedBuild(current);
+                }
+                return current;
             }
-            if (status.isLicensed()) {
-                return recordLicensedBuild(status);
-            }
-        }
-        return status;
+        });
     }
 
     private ToolLicenseStatus recordTrialBuild(ToolLicenseStatus status) {
@@ -277,13 +287,30 @@ public final class ToolLicenseChecker {
         int builds = 0;
         LocalDate started = today;
         if (state != null) {
-            days = positive(ToolValues.integer(state.get("days"), days), days);
-            maxBuilds = positive(ToolValues.integer(state.get("max_builds"), maxBuilds),
-                    maxBuilds);
+            // Never let a stale or forged state grant a longer trial than the
+            // configured policy. The local seal is tamper evidence, not a
+            // secret, so the policy is always the upper bound.
+            days = Math.min(positive(ToolValues.integer(state.get("days"), days), days), trialDays);
+            maxBuilds = Math.min(positive(
+                    ToolValues.integer(state.get("max_builds"), maxBuilds), maxBuilds), trialBuilds);
             builds = Math.max(0, ToolValues.integer(state.get("builds"), 0));
             LocalDate parsed = parseDate(state.get("started"));
             if (parsed != null) {
                 started = parsed;
+            }
+            LocalDate lastBuild = parseDate(state.get("last_build"));
+            if (started.isAfter(today.plusDays(STATE_MAX_FUTURE_DAYS))
+                    || (lastBuild != null
+                    && lastBuild.isAfter(today.plusDays(STATE_MAX_FUTURE_DAYS)))) {
+                throw new ToolLicenseException(ToolCodes.STATE_INVALID,
+                        "tool state contains an implausible future date; "
+                                + "correct the system clock or reset the state");
+            }
+            if (today.isBefore(started.minusDays(1))
+                    || (lastBuild != null && today.isBefore(lastBuild.minusDays(1)))) {
+                throw new ToolLicenseException(ToolCodes.STATE_INVALID,
+                        "system clock is earlier than the recorded trial state; "
+                                + "correct the system clock");
             }
         }
         long elapsed = ChronoUnit.DAYS.between(started, today);
@@ -330,11 +357,19 @@ public final class ToolLicenseChecker {
         Map<String, Object> state = store.readSealed(file, QUOTA_PURPOSE);
         int limit = entitlement.getMaxBuildsPerMonth();
         int used = 0;
+        String currentMonth = month(today);
+        String storedMonth = state == null
+                ? null : ToolValues.string(state.get("month"), null);
         if (state != null
                 && entitlement.getLicenseId().equals(
-                        ToolValues.string(state.get("license_id"), null))
-                && month(today).equals(ToolValues.string(state.get("month"), null))) {
-            used = Math.max(0, ToolValues.integer(state.get("used"), 0));
+                        ToolValues.string(state.get("license_id"), null))) {
+            if (storedMonth != null && currentMonth.compareTo(storedMonth) < 0) {
+                throw new ToolLicenseException(ToolCodes.STATE_INVALID,
+                        "quota state belongs to a later month; correct the system clock");
+            }
+            if (currentMonth.equals(storedMonth)) {
+                used = Math.max(0, ToolValues.integer(state.get("used"), 0));
+            }
         }
         if (limit > 0 && used >= limit) {
             throw new ToolLicenseException(ToolCodes.QUOTA_EXHAUSTED,
@@ -359,23 +394,44 @@ public final class ToolLicenseChecker {
     }
 
     /** Writes the local activation record for a licence that requires one. */
-    public void activate(ToolEntitlement entitlement) {
+    public void activate(final ToolEntitlement entitlement) {
         if (entitlement == null) {
             throw new IllegalArgumentException("tool entitlement is required");
         }
-        Map<String, Object> state = new LinkedHashMap<String, Object>();
-        state.put("format", INSTALL_FORMAT);
-        state.put("license_id", entitlement.getLicenseId());
-        state.put("machine", machine);
-        state.put("activated", Dates.now());
-        store.writeSealed(store.resolve(ToolStateStore.INSTALL_FILE),
-                INSTALL_PURPOSE, state);
+        locked(new StateLock.Action<Void>() {
+            @Override
+            public Void run() throws IOException {
+                Map<String, Object> state = new LinkedHashMap<String, Object>();
+                state.put("format", INSTALL_FORMAT);
+                state.put("license_id", entitlement.getLicenseId());
+                state.put("machine", machine);
+                state.put("activated", Dates.now());
+                store.writeSealed(store.resolve(ToolStateStore.INSTALL_FILE),
+                        INSTALL_PURPOSE, state);
+                return null;
+            }
+        });
     }
 
     /** Removes the installed licence and its activation record. */
     public void deactivate() {
-        ToolStateStore.delete(store.resolve(ToolStateStore.TOOL_LICENSE_FILE));
-        ToolStateStore.delete(store.resolve(ToolStateStore.INSTALL_FILE));
+        locked(new StateLock.Action<Void>() {
+            @Override
+            public Void run() throws IOException {
+                ToolStateStore.delete(store.resolve(ToolStateStore.TOOL_LICENSE_FILE));
+                ToolStateStore.delete(store.resolve(ToolStateStore.INSTALL_FILE));
+                return null;
+            }
+        });
+    }
+
+    private <T> T locked(StateLock.Action<T> action) {
+        try {
+            return StateLock.withLock(store.lockFile(), StateLock.DEFAULT_TIMEOUT_MILLIS, action);
+        } catch (IOException exc) {
+            throw new ToolLicenseException(ToolCodes.STATE_IO,
+                    "cannot lock tool state: " + store.lockFile(), exc);
+        }
     }
 
     public ToolStateStore getStore() {

@@ -171,7 +171,15 @@ public final class ToolLicense {
         if (!truthy(value)) {
             return false;
         }
-        return embeddedPublicKey() == null;
+        return !hasEmbeddedPublicKey();
+    }
+
+    /**
+     * True when the release build embedded the issuer key. Source builds can
+     * use development overrides; official builds must ignore them.
+     */
+    static boolean hasEmbeddedPublicKey() {
+        return embeddedPublicKey() != null;
     }
 
     private static boolean truthy(String value) {

@@ -61,6 +61,17 @@ class ToolStateStoreTest {
     }
 
     @Test
+    void nonRegularStateIsRejected() throws Exception {
+        ToolStateStore store = new ToolStateStore(temp, "machine-a");
+        Path file = store.resolve("quota.json");
+        Files.createDirectories(file);
+
+        ToolLicenseException exc = assertThrows(ToolLicenseException.class,
+                () -> store.readSealed(file, "quota"));
+        assertEquals(ToolCodes.STATE_INVALID, exc.getCode());
+    }
+
+    @Test
     void stateIsBoundToItsPurpose() {
         ToolStateStore store = new ToolStateStore(temp, "machine-a");
         Path file = store.resolve("quota.json");

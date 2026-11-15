@@ -2,11 +2,10 @@ package com.javashield.tool;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermission;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -21,6 +20,7 @@ import javax.crypto.spec.SecretKeySpec;
 
 import com.javashield.core.Fingerprint;
 import com.javashield.core.crypto.Hex;
+import com.javashield.core.io.SafeFiles;
 import com.javashield.core.json.Json;
 
 /**
@@ -38,6 +38,7 @@ public final class ToolStateStore {
     public static final String QUOTA_FILE = "quota.json";
     public static final String INSTALL_FILE = "install.json";
     public static final String REVOCATIONS_FILE = "revocations.json";
+    public static final String STATE_LOCK_FILE = "state.lock";
 
     private static final Charset UTF_8 = Charset.forName("UTF-8");
     private static final String STATE_FORMAT = "jshield-state/1";
@@ -97,6 +98,11 @@ public final class ToolStateStore {
         return home.resolve(name);
     }
 
+    /** Lock file that serializes trial, quota and activation state updates. */
+    public Path lockFile() {
+        return resolve(STATE_LOCK_FILE);
+    }
+
     /**
      * Reads a sealed state file.
      *
@@ -104,12 +110,18 @@ public final class ToolStateStore {
      * @throws ToolLicenseException when the file exists but its seal is broken
      */
     public Map<String, Object> readSealed(Path file, String purpose) {
-        if (!Files.isRegularFile(file)) {
+        if (Files.notExists(file)) {
             return null;
+        }
+        if (!Files.isRegularFile(file)) {
+            throw new ToolLicenseException(ToolCodes.STATE_INVALID,
+                    "tool state is not a regular file: " + file);
         }
         Map<String, Object> document;
         try {
-            document = Json.parseObject(new String(Files.readAllBytes(file), UTF_8));
+            document = Json.parseObject(new String(SafeFiles.readAllBytes(file), UTF_8));
+        } catch (NoSuchFileException exc) {
+            return null;
         } catch (IOException exc) {
             throw new ToolLicenseException(ToolCodes.STATE_IO,
                     "cannot read tool state: " + file, exc);
@@ -222,12 +234,8 @@ public final class ToolStateStore {
                 if (restrict) {
                     restrictPermissions(temporary);
                 }
-                try {
-                    Files.move(temporary, absolute, StandardCopyOption.REPLACE_EXISTING,
-                            StandardCopyOption.ATOMIC_MOVE);
-                } catch (AtomicMoveNotSupportedException exc) {
-                    Files.move(temporary, absolute, StandardCopyOption.REPLACE_EXISTING);
-                }
+                SafeFiles.fsync(temporary);
+                SafeFiles.move(temporary, absolute);
             } finally {
                 Files.deleteIfExists(temporary);
             }

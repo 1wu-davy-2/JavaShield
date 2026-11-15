@@ -243,9 +243,19 @@ binding_key = HKDF-SHA256(build_key, salt="jshield-binding-v1", info=build_id, L
 mac         = HMAC-SHA256(binding_key, build_id + "|" + fingerprint + "|" + bound_at)
 ```
 
+首次启动绑定只允许写入持久路径。系统临时目录、`_MEI*` 解压目录等易失位置会被拒绝；只读部署可用 `-Djshield.binding` 指向持久路径。删除记录仍会重置绑定，这是离线首次绑定无法消除的边界。
+
 ---
 
 ## 7. 时钟状态 `~/.jshield/<build_id>.state`
+
+时钟状态保留两个副本：
+
+```
+~/.jshield/<build_id>.state
+~/.jshield/<build_id>.state.bak
+~/.jshield/<build_id>.state.lock
+```
 
 ```json
 {
@@ -260,7 +270,14 @@ state_key = HKDF-SHA256(build_key, salt="jshield-state-v1", info=build_id, L=32)
 mac       = HMAC-SHA256(state_key, build_id + "|" + last_seen)
 ```
 
-今天早于 `last_seen - 1 天` 即判定为时钟回拨。状态目录可用 `-Djshield.state.dir` 覆盖。
+读取时两份都校验：
+
+- 两份都缺失：视为首次运行，写入两份；
+- 一份缺失、损坏或不可读：用另一份修复两份；
+- 两份日期不一致：取较新的日期并重写两份；
+- 两份都无效：拒绝启动。
+
+今天早于 `last_seen - 1 天` 判定为时钟回拨；`last_seen` 晚于今天 7 天视为异常状态。状态目录不可写时默认拒绝启动；只读部署可显式设置 `-Djshield.state.volatile=true` 或 `JSHIELD_ALLOW_VOLATILE_STATE=1` 降级为尽力而为。状态目录可用 `-Djshield.state.dir` 覆盖。锁文件用于跨进程串行化“读-改-写”，避免并发启动互相覆盖。
 
 ---
 

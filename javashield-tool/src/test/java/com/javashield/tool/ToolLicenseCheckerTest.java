@@ -7,13 +7,21 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.InputStreamReader;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -318,5 +326,126 @@ class ToolLicenseCheckerTest {
         ToolLicenseStatus status = checker(store, DAY).check();
         assertFalse(status.isAllowed());
         assertEquals(ToolCodes.STATE_INVALID, status.getCode());
+    }
+
+    @Test
+    void storedTrialCannotExceedTheConfiguredPolicy() {
+        ToolStateStore store = store("trial-bound");
+        Map<String, Object> state = trialState(store, DAY.minusDays(1));
+        state.put("days", Long.valueOf(36500));
+        state.put("max_builds", Long.valueOf(1000000));
+        store.writeSealed(store.resolve(ToolStateStore.TRIAL_FILE), "trial", state);
+
+        ToolLicenseChecker checker = checker(store, DAY);
+        ToolLicenseStatus status = checker.recordBuild(checker.check());
+
+        assertEquals(3, status.getTrialMaxBuilds());
+        assertEquals(2, status.getTrialBuildsLeft());
+    }
+
+    @Test
+    void implausibleFutureTrialStateIsRejected() {
+        ToolStateStore store = store("trial-future");
+        Map<String, Object> state = trialState(store, DAY.plusDays(30));
+        store.writeSealed(store.resolve(ToolStateStore.TRIAL_FILE), "trial", state);
+
+        ToolLicenseChecker checker = checker(store, DAY);
+        ToolLicenseException exc = assertThrows(ToolLicenseException.class,
+                () -> checker.recordBuild(checker.check()));
+        assertEquals(ToolCodes.STATE_INVALID, exc.getCode());
+    }
+
+    @Test
+    void trialStateRejectsASystemClockRollback() {
+        ToolStateStore store = store("trial-clock");
+        Map<String, Object> state = trialState(store, DAY.minusDays(10));
+        state.put("last_build", DAY.plusDays(3).toString());
+        store.writeSealed(store.resolve(ToolStateStore.TRIAL_FILE), "trial", state);
+
+        ToolLicenseChecker checker = checker(store, DAY);
+        ToolLicenseException exc = assertThrows(ToolLicenseException.class,
+                () -> checker.recordBuild(checker.check()));
+        assertEquals(ToolCodes.STATE_INVALID, exc.getCode());
+    }
+
+    @Test
+    void quotaRejectsARollbackToAnEarlierMonth() {
+        ToolStateStore store = store("quota-clock");
+        install(store, licence("JS-QUOTA-CLOCK", "pro"));
+
+        ToolLicenseChecker later = new ToolLicenseChecker(store, publicKey, false,
+                DAY.plusMonths(1), null, 14, 3);
+        ToolLicenseStatus status = later.recordBuild(later.check());
+        assertEquals(1, status.getQuotaUsed());
+
+        ToolLicenseChecker earlier = new ToolLicenseChecker(store, publicKey, false,
+                DAY, null, 14, 3);
+        ToolLicenseException exc = assertThrows(ToolLicenseException.class,
+                () -> earlier.recordBuild(earlier.check()));
+        assertEquals(ToolCodes.STATE_INVALID, exc.getCode());
+    }
+
+    @Test
+    void parallelProcessesDoNotExceedTheTrialQuota() throws Exception {
+        Path home = temp.resolve("parallel");
+        String machine = "parallel-machine";
+        long startAt = System.currentTimeMillis() + 2500L;
+        String java = Paths.get(System.getProperty("java.home"), "bin", "java").toString();
+        String classpath = System.getProperty("java.class.path")
+                + File.pathSeparator + codeSource(ToolLicenseChecker.class)
+                + File.pathSeparator + codeSource(ConcurrentBuildWorker.class)
+                + File.pathSeparator + codeSource(com.javashield.core.Fingerprint.class);
+        List<Process> processes = new ArrayList<Process>();
+        for (int i = 0; i < 6; i++) {
+            ProcessBuilder builder = new ProcessBuilder(java, "-cp", classpath,
+                    ConcurrentBuildWorker.class.getName(),
+                    home.toString(), machine, String.valueOf(startAt),
+                    String.valueOf(DAY), "14", "3");
+            builder.redirectErrorStream(true);
+            processes.add(builder.start());
+        }
+
+        int allowed = 0;
+        int denied = 0;
+        for (Process process : processes) {
+            if (!process.waitFor(30, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                throw new AssertionError("concurrent build worker timed out");
+            }
+            StringBuilder output = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append('\n');
+                }
+            }
+            if (output.indexOf("OK") >= 0) {
+                allowed++;
+            } else if (output.indexOf("DENIED:" + ToolCodes.TRIAL_EXPIRED) >= 0) {
+                denied++;
+            } else {
+                throw new AssertionError("unexpected worker output: " + output);
+            }
+        }
+        assertEquals(3, allowed);
+        assertEquals(3, denied);
+    }
+
+    private static String codeSource(Class<?> type) throws Exception {
+        return Paths.get(type.getProtectionDomain().getCodeSource().getLocation()
+                .toURI()).toString();
+    }
+
+    private Map<String, Object> trialState(ToolStateStore store, LocalDate started) {
+        Map<String, Object> state = new LinkedHashMap<String, Object>();
+        state.put("format", "jshield-trial/1");
+        state.put("started", started.toString());
+        state.put("last_build", started.toString());
+        state.put("builds", Long.valueOf(0));
+        state.put("days", Long.valueOf(14));
+        state.put("max_builds", Long.valueOf(3));
+        state.put("machine", store.machine());
+        return state;
     }
 }
